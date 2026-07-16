@@ -1,0 +1,16 @@
+# skills/ib-common/config.example.yaml
+connection:
+  host: 127.0.0.1
+  port: 4002          # 4002 = paper, 4001 = live
+  client_id: 17
+  read_only: true     # keep true; this project never places orders
+data:
+  freshness_hours: 24
+  base_currency: null # null => follow the IB account BASE currency
+storage:
+  root: ./data
+thresholds:
+  single_position_weight_warn: 0.20   # P2 when one name > 20% of portfolio
+  single_position_weight_crit: 0.35   # P1 when > 35%
+  hhi_concentration_warn: 0.18
+  max_drawdown_warn: 0.20

@@ -1,0 +1,5 @@
+# skills/ib-common/tests/fixtures/config_minimal.yaml
+data:
+  base_currency: USD
+storage:
+  root: ./data
