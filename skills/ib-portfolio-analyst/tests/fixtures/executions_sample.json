@@ -1,0 +1,5 @@
+[
+  {"exec_id": "T1", "symbol": "AAPL", "side": "BUY", "quantity": 10, "price": 150.0, "commission": 3.0, "ts": "2026-02-01T15:00:00Z"},
+  {"exec_id": "T2", "symbol": "AAPL", "side": "SELL", "quantity": 10, "price": 160.0, "commission": 3.0, "ts": "2026-03-01T15:00:00Z"},
+  {"exec_id": "T3", "symbol": "MSFT", "side": "BUY", "quantity": 5, "price": 300.0, "commission": 4.0, "ts": "2026-03-05T15:00:00Z"}
+]
