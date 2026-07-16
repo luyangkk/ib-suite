@@ -29,12 +29,26 @@ def test_yield_on_cost_only_for_held_names():
     yoc = dividend_analysis.yield_on_cost(_divs(), _snap())
     # AAPL cost basis 400*150 = 60000; net income 24 => 0.0004
     assert "AAPL" in yoc and yoc["AAPL"] > 0
+    assert yoc["AAPL"] == 0.0004               # guards against cost-basis miscalc
+    assert "MSFT" in yoc                       # MSFT held: 300 @ 300 = 90000 basis
     assert "TSM" not in yoc                    # TSM not held in snapshot
 
 
 def test_analyze_flags_withholding_drag():
     findings = dividend_analysis.analyze(_divs(), _snap(), TH)
     assert any(f.dimension == "dividends" for f in findings)
-    # total tax 10.5 / gross 111.5 = ~9.4% -> near warn band
-    assert any("withholding" in f.finding.lower() or "tax" in f.finding.lower()
-               for f in findings)
+    # total tax 10.5 / gross 111.5 = ~9.4% -> BELOW warn 0.10 -> P3
+    drag_findings = [f for f in findings
+                     if "withholding" in f.finding.lower() or "tax" in f.finding.lower()]
+    assert drag_findings
+    assert drag_findings[0].priority == Priority.P3
+    # best held Yield-on-Cost is MSFT (37.5/90000 > AAPL 24/60000);
+    # 0.000417 <= crit 0.01 under higher_is_worse=False -> P1
+    yoc_findings = [f for f in findings if "yield on cost" in f.finding.lower()]
+    assert yoc_findings
+    assert yoc_findings[0].evidence["symbol"] == "MSFT"
+    assert yoc_findings[0].priority == Priority.P1
+
+
+def test_analyze_empty_returns_empty():
+    assert dividend_analysis.analyze([], _snap(), TH) == []

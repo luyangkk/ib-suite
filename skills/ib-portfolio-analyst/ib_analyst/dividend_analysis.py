@@ -2,8 +2,13 @@
 
 All figures are historical facts from the Flex-sourced dividend records and
 the current snapshot's cost basis. No forward yield, no growth forecast —
-those are deferred. Income is grouped by currency and never summed across
-currencies silently.
+those are deferred.
+
+Currency handling (v1): this module assumes a single reporting currency.
+`income_by_symbol` aggregates gross/tax/net per symbol and keeps the row's
+currency (first seen wins), and the withholding-drag ratio is computed on
+pooled gross/tax totals across all rows. Grouping or FX-converting across
+distinct currencies is deferred to a later iteration.
 """
 from __future__ import annotations
 from ib_common.schema import Dividend, Snapshot
@@ -66,11 +71,13 @@ def analyze(dividends: list[Dividend], snapshot: Snapshot, thresholds: dict) -> 
                        thresholds["withholding_drag_crit"]),
         dimension=DIM,
         finding=f"Withholding tax is {drag:.1%} of gross dividend income",
-        evidence={"gross": gross, "tax": tax, "drag": round(drag, 4)},
+        evidence={"gross": round(gross, 2), "tax": round(tax, 2), "drag": round(drag, 4)},
         impact="tax withholding reduces the income you actually keep",
         suggestion="review whether treaty rates or account structure could lower withholding",
         trigger_condition=f"withholding drag >= {thresholds['withholding_drag_warn']:.0%}",
         confidence=0.85,
-        data_limitations="reflects taxes recorded in Flex; reclaim/treaty effects not modeled",
+        data_limitations="reflects taxes recorded in Flex; reclaim/treaty effects not modeled. "
+                         "v1 assumes a single reporting currency and does not group or "
+                         "FX-convert across currencies",
     ))
     return findings
