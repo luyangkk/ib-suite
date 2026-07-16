@@ -35,6 +35,12 @@ def test_dividends_appear_in_report(tmp_path):
     )
     report_text = Path(out["report"]).read_text()
     assert "dividends" in report_text
+    # dividend FINDINGS text must render, not just the chart reference:
+    # these would fail if dividend findings were dropped from the report,
+    # whereas the "dividends" chart image link alone would still satisfy the
+    # assertion above.
+    assert "yield on cost" in report_text.lower()  # Yield-on-Cost finding
+    assert "Withholding tax is" in report_text     # withholding-drag finding
     # dividend chart rendered
     assert "dividends" in out["charts"]
     assert Path(out["charts"]["dividends"]["png"]).exists()
