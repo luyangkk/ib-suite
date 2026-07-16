@@ -10,7 +10,23 @@ data:
 storage:
   root: ./data
 thresholds:
+  # account_health: cash buffer (lower is riskier) and gross leverage
+  cash_ratio_warn: 0.10               # P2 when cash < 10% of net liquidation
+  cash_ratio_crit: 0.05               # P1 when cash < 5%
+  leverage_warn: 1.5                  # P2 when gross exposure > 1.5x NLV
+  leverage_crit: 2.0                  # P1 when > 2.0x
+  # concentration: single-name weight and portfolio HHI
   single_position_weight_warn: 0.20   # P2 when one name > 20% of portfolio
   single_position_weight_crit: 0.35   # P1 when > 35%
   hhi_concentration_warn: 0.18
+  hhi_concentration_crit: 0.30
+  # pnl_attribution: share of gross unrealized P&L from one name
+  pnl_contrib_warn: 0.50              # P2 when one name drives > 50%
+  # trade_review: commission drag in bps of traded notional
+  commission_bps_warn: 5.0
+  commission_bps_crit: 15.0
+  # portfolio_risk: 1-day 95% historical VaR and sample max drawdown
+  var95_warn: 0.02
+  var95_crit: 0.05
   max_drawdown_warn: 0.20
+  max_drawdown_crit: 0.30
