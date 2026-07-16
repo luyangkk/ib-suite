@@ -25,6 +25,11 @@ def test_sort_by_priority_p0_first():
 def test_markdown_contains_all_fields_and_summary():
     md = report.to_markdown(_findings(), {"concentration": "concentration.png"})
     assert "P0" in md and "P2" in md
+    # Pin the summary line so a broken _summary_line can't pass on the
+    # "P0"/"P2" that also appear in the finding section headers.
+    assert "**Summary**" in md
+    for count in ("P0: 1", "P1: 0", "P2: 1", "P3: 0"):
+        assert count in md
     for label in ("Finding", "Evidence", "Impact", "Suggestion",
                   "Trigger", "Confidence", "Data limitations"):
         assert label in md
