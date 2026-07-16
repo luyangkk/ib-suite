@@ -1046,7 +1046,7 @@ def parse_flex_dividends(xml_text: str) -> list[Dividend]:
         out.append(Dividend(
             symbol=ct.get("symbol", ""),
             ex_date=_parse_date(ct.get("dateTime", "1970-01-01")),
-            pay_date=_parse_date(ct["settleDate"]) if ct.get("settleDate") else None,
+            pay_date=_parse_date(ct.get("settleDate")) if ct.get("settleDate") else None,
             gross=float(ct.get("amount", 0.0)),
             tax=0.0,
             currency=ct.get("currency", ""),
