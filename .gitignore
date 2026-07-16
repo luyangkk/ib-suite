@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# archived run artifacts (charts/snapshots) are NOT committed by default
+data/runs/
