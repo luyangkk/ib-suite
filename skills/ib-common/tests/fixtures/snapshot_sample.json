@@ -1,0 +1,17 @@
+{
+  "account": {
+    "account_id": "U0000000",
+    "base_currency": "USD",
+    "net_liquidation": 100000.0,
+    "total_cash": 20000.0,
+    "buying_power": 40000.0,
+    "ts": "2026-07-15T20:00:00Z"
+  },
+  "positions": [
+    {"account_id": "U0000000", "symbol": "AAPL", "sec_type": "STK", "currency": "USD",
+     "quantity": 100, "avg_cost": 150.0, "market_price": 190.0, "market_value": 19000.0, "unrealized_pnl": 4000.0},
+    {"account_id": "U0000000", "symbol": "MSFT", "sec_type": "STK", "currency": "USD",
+     "quantity": 50, "avg_cost": 300.0, "market_price": 420.0, "market_value": 21000.0, "unrealized_pnl": 6000.0}
+  ],
+  "ts": "2026-07-15T20:00:00Z"
+}
