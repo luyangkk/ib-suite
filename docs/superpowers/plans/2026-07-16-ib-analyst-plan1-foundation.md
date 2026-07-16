@@ -332,11 +332,21 @@ thresholds:
   var95_crit: 0.05
   max_drawdown_warn: 0.20
   max_drawdown_crit: 0.30
+  # dividends: yield on cost (higher is better) and withholding-tax drag
+  yield_on_cost_warn: 0.02            # P2 when best held yield on cost < 2%
+  yield_on_cost_crit: 0.01            # P1 when < 1%
+  withholding_drag_warn: 0.10         # P2 when tax > 10% of gross dividends
+  withholding_drag_crit: 0.20         # P1 when > 20%
 ```
 
 > **Note (added during Plan 2 execution):** the full threshold set above is
 > required by the Plan 2 diagnostic modules. The example must ship every key
 > so `/ib-analyze` runs against a copied `config.yaml` without a `KeyError`.
+>
+> **Note (added during Plan 3 execution):** the four `yield_on_cost_*` /
+> `withholding_drag_*` keys were appended for the Plan 3 dividend module, for
+> the same reason — running `/ib-analyze --dividends ...` against a copied
+> example must not `KeyError` inside `dividend_analysis.analyze`.
 
 - [ ] **Step 6: Run test to verify it passes**
 
