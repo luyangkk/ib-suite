@@ -34,6 +34,20 @@ Produces `report.md` plus interactive `.html` and static `.png` charts in the
 output directory. `--bars`/`--executions` are optional; risk and trade-review
 sections are included only when their data is present.
 
+### Dividends
+
+Pass Flex-sourced dividend history to include income diagnostics:
+
+```bash
+{baseDir}/../../.venv/bin/python {baseDir}/scripts/analyze.py \
+  --config ./config.yaml \
+  --snapshot data/snapshots/<account>/<ts>.json \
+  --dividends data/timeseries/dividends.json \
+  --out data/runs/$(date +%Y%m%dT%H%M%S)
+```
+
+Adds Yield-on-Cost and withholding-tax findings plus an income-by-symbol chart.
+
 ## Findings
 
 Each finding carries: priority (P0–P3), dimension, finding, evidence,
