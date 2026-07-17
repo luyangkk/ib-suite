@@ -1,4 +1,4 @@
--e ./skills/ib-common
+-e ./ib-common
 ib_async>=1.0.1
 requests>=2.31
 pytest>=8.0

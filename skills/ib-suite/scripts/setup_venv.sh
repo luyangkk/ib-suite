@@ -25,5 +25,5 @@ echo "using interpreter: $PY ($("$PY" --version 2>&1))"
 # shellcheck disable=SC1091
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r skills/ib-common/requirements.txt
+python -m pip install -r ib-common/requirements.txt
 echo "venv ready: $ROOT/.venv"
