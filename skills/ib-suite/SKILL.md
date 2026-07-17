@@ -25,13 +25,14 @@ This SKILL.md is the entry point. It does not run anything itself — it tells y
 
 | Component | What it is | Runs a command? | Network? |
 |---|---|---|---|
-| [ib-common](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-common) | Shared `pip`-installable package (config / schema / storage / metrics / charts). **Not a skill.** | No | No |
-| [ib-gateway](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-gateway) | Read-only ingestion skill → `/ib-sync` | Yes | Yes (IB Gateway / Flex) |
-| [ib-portfolio-analyst](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-portfolio-analyst) | Offline diagnostics skill → `/ib-analyze` | Yes | No |
+| [ib-common](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-suite/ib-common) | Shared `pip`-installable package (config / schema / storage / metrics / charts). **Not a skill.** | No | No |
+| [ib-gateway](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-suite/ib-gateway) | Read-only ingestion skill → `/ib-sync` | Yes | Yes (IB Gateway / Flex) |
+| [ib-portfolio-analyst](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-suite/ib-portfolio-analyst) | Offline diagnostics skill → `/ib-analyze` | Yes | No |
 
 ```
-skills/
+skills/ib-suite/
   SKILL.md                 # <- you are here (index / router)
+  scripts/setup_venv.sh    # shared venv bootstrap (installs ib-common editable)
   ib-common/               # shared library (installed editable into .venv)
   ib-gateway/              # /ib-sync   : IB/Flex -> local data lake
   ib-portfolio-analyst/    # /ib-analyze: data lake -> report.md + charts
@@ -56,16 +57,16 @@ setup_venv.sh        ->  ib-gateway /ib-sync      ->  ib-portfolio-analyst /ib-a
 1. **Setup once (or after dependency changes).** Bootstraps the shared `.venv`
    and installs `ib-common` (editable) plus runtime deps. Idempotent.
    ```bash
-   bash {baseDir}/../scripts/setup_venv.sh
+   bash {baseDir}/scripts/setup_venv.sh
    cp {baseDir}/ib-common/config.example.yaml ./config.yaml   # then edit ports/thresholds
    ```
 2. **Ingest (ib-gateway, online).** Start IB Gateway (paper 4002 / live 4001)
    with API access, then run `/ib-sync`. Writes `data/snapshots/<account>/<ts>.json`
    and appends `data/timeseries/positions_history.parquet`. See
-   [ib-gateway/SKILL.md](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-gateway/SKILL.md).
+   [ib-gateway/SKILL.md](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-suite/ib-gateway/SKILL.md).
 3. **Analyze (ib-portfolio-analyst, offline).** Run `/ib-analyze` against a
    snapshot to produce `report.md` + `.html`/`.png` charts. See
-   [ib-portfolio-analyst/SKILL.md](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-portfolio-analyst/SKILL.md).
+   [ib-portfolio-analyst/SKILL.md](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-suite/ib-portfolio-analyst/SKILL.md).
 
 **Which skill do I run?**
 
@@ -119,10 +120,10 @@ output paths) to stdout and return non-zero on failure:
 
 ```bash
 # ingest
-{baseDir}/../.venv/bin/python {baseDir}/ib-gateway/scripts/ib_sync.py --config ./config.yaml
+{baseDir}/.venv/bin/python {baseDir}/ib-gateway/scripts/ib_sync.py --config ./config.yaml
 
 # analyze (bars/executions/dividends optional)
-{baseDir}/../.venv/bin/python {baseDir}/ib-portfolio-analyst/scripts/analyze.py \
+{baseDir}/.venv/bin/python {baseDir}/ib-portfolio-analyst/scripts/analyze.py \
   --config ./config.yaml \
   --snapshot data/snapshots/<account>/<ts>.json \
   --out data/runs/$(date +%Y%m%dT%H%M%S)
@@ -139,8 +140,8 @@ token as `$FLEX_TOKEN`; never hardcode tokens, account numbers, or user paths.
   `CLAUDE.md` for the authoritative project rules and conventions.
 - **Test baseline:** `54 passed`.
   ```bash
-  .venv/bin/python -m pytest skills -q          # full suite
-  .venv/bin/python -m pytest skills/ib-portfolio-analyst -q   # one skill
+  skills/ib-suite/.venv/bin/python -m pytest skills -q          # full suite
+  skills/ib-suite/.venv/bin/python -m pytest skills/ib-suite/ib-portfolio-analyst -q   # one skill
   ```
 
 ### Changelog
