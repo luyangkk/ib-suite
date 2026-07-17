@@ -224,6 +224,61 @@ class PositionsOverview(BaseModel):
     ts: datetime
 
 
+class DailyPnLPosition(BaseModel):
+    """A single position's contribution to today's P&L.
+
+    All three P&L figures come from IB's `pnl` subscription (`reqPnLSingle`) and
+    are already in the account base currency — IB converts foreign positions
+    before it publishes them, so these are summed directly (no `fx_rate` here,
+    unlike `Position`/`PositionView`). `currency` is the position's trading
+    currency, kept only for the per-currency breakdown, not for conversion.
+    """
+
+    account_id: str
+    symbol: str
+    name: str = ""              # instrument long name; "" when IB has none
+    sec_type: str              # STK / OPT / FUT / CASH ...
+    stock_type: str = ""       # IB contract-detail stockType (COMMON/ETF/...) for STK
+    currency: str              # trading currency (for the per-currency breakdown)
+    daily_pnl: float           # today's P&L (base currency)
+    unrealized_pnl: float      # open-position P&L (base currency)
+    realized_pnl: float        # P&L booked today from closes (base currency)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def asset_class(self) -> str:
+        """Human asset-class label derived from sec_type (+ stockType for STK).
+
+        STK splits into ETF vs Stock via IB's stockType; OPT/FUT/CASH map to
+        Option/Future/Forex. Anything unrecognized keeps its raw sec_type so an
+        unmapped instrument is visible rather than silently bucketed wrong.
+        """
+        st = self.sec_type.upper()
+        if st == "STK":
+            return "ETF" if self.stock_type.upper() == "ETF" else "Stock"
+        return {"OPT": "Option", "FOP": "Option", "FUT": "Future",
+                "CASH": "Forex", "BOND": "Bond", "FUND": "Fund"}.get(st, self.sec_type)
+
+
+class DailyPnLOverview(BaseModel):
+    """Account-level daily P&L: today's total split into realized/unrealized,
+    with every position's contribution.
+
+    Companion to `AccountOverview`/`PositionsOverview` for the /ib-daily-pnl
+    command. Every P&L figure is already base-currency (IB's pnl subscription
+    converts before publishing), so contributions sum directly. Reads P&L state
+    only — no orders, no write path to IB.
+    """
+
+    account_id: str
+    base_currency: str
+    daily_pnl: float           # today's total P&L (base currency)
+    unrealized_pnl: float
+    realized_pnl: float
+    positions: list[DailyPnLPosition]
+    ts: datetime
+
+
 class Snapshot(BaseModel):
     """Point-in-time snapshot combining account summary and positions."""
 

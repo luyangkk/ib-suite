@@ -1,0 +1,25 @@
+{
+  "account": {
+    "account_id": "U0000000",
+    "base_currency": "USD",
+    "daily_pnl": 1650.0,
+    "unrealized_pnl": 1355.0,
+    "realized_pnl": 500.0
+  },
+  "positions": [
+    {"symbol": "AAPL", "name": "APPLE INC", "sec_type": "STK", "stock_type": "COMMON",
+     "currency": "USD", "daily_pnl": 1200.0, "unrealized_pnl": 4000.0, "realized_pnl": 0.0, "value": 19000.0},
+    {"symbol": "MSFT", "name": "MICROSOFT CORP", "sec_type": "STK", "stock_type": "COMMON",
+     "currency": "USD", "daily_pnl": -800.0, "unrealized_pnl": -4000.0, "realized_pnl": 0.0, "value": 21000.0},
+    {"symbol": "SPY", "name": "SPDR S&P 500 ETF TRUST", "sec_type": "STK", "stock_type": "ETF",
+     "currency": "USD", "daily_pnl": 300.0, "unrealized_pnl": 1000.0, "realized_pnl": 0.0, "value": 15000.0},
+    {"symbol": "NVDA", "name": "NVDA 20260116 180 CALL", "sec_type": "OPT", "stock_type": "",
+     "currency": "USD", "daily_pnl": 2500.0, "unrealized_pnl": 2500.0, "realized_pnl": 500.0, "value": 6000.0},
+    {"symbol": "TSLA", "name": "TSLA 20260116 200 PUT", "sec_type": "OPT", "stock_type": "",
+     "currency": "USD", "daily_pnl": -1500.0, "unrealized_pnl": -1500.0, "realized_pnl": 0.0, "value": 3000.0},
+    {"symbol": "EUR", "name": "EUR.USD", "sec_type": "CASH", "stock_type": "",
+     "currency": "USD", "daily_pnl": 150.0, "unrealized_pnl": 150.0, "realized_pnl": 0.0, "value": 5000.0},
+    {"symbol": "D05", "name": "DBS GROUP HOLDINGS LTD", "sec_type": "STK", "stock_type": "COMMON",
+     "currency": "SGD", "daily_pnl": -200.0, "unrealized_pnl": -795.0, "realized_pnl": 0.0, "value": 5580.0}
+  ]
+}
