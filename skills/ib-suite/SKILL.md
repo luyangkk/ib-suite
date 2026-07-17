@@ -3,7 +3,6 @@ name: ib-suite
 description: Read-only Interactive Brokers toolchain index. Use when orienting in the skills/ directory, deciding which IB skill to run (ib-gateway vs ib-portfolio-analyst) or in what order, or when integrating the toolchain from another system. Not for doing the work itself — the sub-skills own that.
 metadata:
   openclaw:
-    homepage: https://docs.openclaw.ai/tools/skills
     always: true
     requires:
       bins: [python3]
@@ -58,6 +57,8 @@ Runtime config and data stay workspace-local under `<workspace>/.ib-suite/`
 |---|---|---|---|
 | [ib-common]({baseDir}/ib-common) | Shared `pip`-installable package (config / schema / storage / metrics / charts). **Not a skill.** | No | No |
 | [ib-gateway]({baseDir}/ib-gateway) | Read-only ingestion skill → `/ib-sync` | Yes | Yes (IB Gateway / Flex) |
+| [ib-account-overview]({baseDir}/ib-account-overview) | Read-only account financial overview skill → `/ib-account-overview` | Yes | Yes (IB Gateway) |
+| [ib-positions-overview]({baseDir}/ib-positions-overview) | Read-only enriched positions overview skill → `/ib-positions-overview` | Yes | Yes (IB Gateway) |
 | [ib-portfolio-analyst]({baseDir}/ib-portfolio-analyst) | Offline diagnostics skill → `/ib-analyze` | Yes | No |
 
 ```
@@ -66,6 +67,8 @@ skills/ib-suite/
   scripts/setup_venv.sh    # shared venv bootstrap (installs ib-common editable)
   ib-common/               # shared library (installed editable into .venv)
   ib-gateway/              # /ib-sync   : IB/Flex -> local data lake
+  ib-account-overview/     # /ib-account-overview: IB account -> financial overview (no persistence)
+  ib-positions-overview/   # /ib-positions-overview: IB positions -> enriched, ranked overview (no persistence)
   ib-portfolio-analyst/    # /ib-analyze: data lake -> report.md + charts
 ```
 
@@ -112,6 +115,8 @@ setup_venv.sh        ->  ib-gateway /ib-sync      ->  ib-portfolio-analyst /ib-a
 | You want to… | Run |
 |---|---|
 | Refresh account/position data from IB | `ib-gateway` → `/ib-sync` |
+| See account equity, margin, liquidity & P&L right now | `ib-account-overview` → `/ib-account-overview` |
+| List every position, ranked, with the most concentrated name | `ib-positions-overview` → `/ib-positions-overview` |
 | Produce a diagnostic report from existing data | `ib-portfolio-analyst` → `/ib-analyze` |
 | Test either skill without IB | its `tests/` fixtures (see §5) |
 

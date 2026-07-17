@@ -1,0 +1,22 @@
+{
+  "account": {
+    "account_id": "U0000000",
+    "base_currency": "USD",
+    "net_liquidation": 408308.99,
+    "total_cash": 44752.56,
+    "buying_power": 1210892.38,
+    "margin_used": 111778.74,
+    "init_margin_req": 111778.74,
+    "maint_margin_req": 109414.84,
+    "available_funds": 302723.10,
+    "excess_liquidity": 305094.72,
+    "gross_position_value": 376005.41,
+    "daily_pnl": -4580.17,
+    "unrealized_pnl": -6946.92,
+    "realized_pnl": 0.0
+  },
+  "currency_balances": [
+    {"currency": "USD", "cash_balance": 44731.52, "net_liquidation": 402780.61, "exchange_rate": 1.0},
+    {"currency": "SGD", "cash_balance": 27.15, "net_liquidation": 7223.15, "exchange_rate": 0.7747392}
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "account": {
+    "account_id": "U0000000",
+    "base_currency": "USD",
+    "net_liquidation": 100000.0
+  },
+  "positions": [
+    {"symbol": "AAPL", "name": "APPLE INC", "sec_type": "STK", "currency": "USD",
+     "quantity": 100, "avg_cost": 150.0, "market_price": 190.0,
+     "market_value": 19000.0, "unrealized_pnl": 4000.0,
+     "industry": "Technology", "market": "NASDAQ", "fx_rate": 1.0},
+    {"symbol": "MSFT", "name": "MICROSOFT CORP", "sec_type": "STK", "currency": "USD",
+     "quantity": 50, "avg_cost": 500.0, "market_price": 420.0,
+     "market_value": 21000.0, "unrealized_pnl": -4000.0,
+     "industry": "Technology", "market": "NASDAQ", "fx_rate": 1.0},
+    {"symbol": "D05", "name": "DBS GROUP HOLDINGS LTD", "sec_type": "STK", "currency": "SGD",
+     "quantity": 100, "avg_cost": 80.0, "market_price": 72.05,
+     "market_value": 7205.0, "unrealized_pnl": -795.0,
+     "industry": "Banks", "market": "SGX", "fx_rate": 0.7747392},
+    {"symbol": "TSLA", "name": "TESLA INC", "sec_type": "STK", "currency": "USD",
+     "quantity": -10, "avg_cost": 250.0, "market_price": 200.0,
+     "market_value": -2000.0, "unrealized_pnl": 500.0,
+     "industry": "Auto Manufacturers", "market": "NASDAQ", "fx_rate": 1.0},
+    {"symbol": "BABA", "name": "BABA 20260116 90 CALL", "sec_type": "OPT", "currency": "USD",
+     "quantity": 5, "avg_cost": 680.0, "market_price": 8.0,
+     "market_value": 4000.0, "unrealized_pnl": 600.0,
+     "industry": "Internet", "market": "", "fx_rate": 1.0}
+  ]
+}
