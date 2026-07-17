@@ -4,9 +4,9 @@ description: Read-only Interactive Brokers toolchain index. Use when orienting i
 metadata:
   openclaw:
     homepage: https://docs.openclaw.ai/tools/skills
+    always: true
     requires:
       bins: [python3]
-      config: [config.yaml]
     os: [darwin, linux]
 ---
 
@@ -20,6 +20,37 @@ touches the network.
 
 This SKILL.md is the entry point. It does not run anything itself — it tells you
 (and OpenClaw) which sub-skill to run, in what order, and how the pieces fit.
+
+## 0. First-run setup
+
+Before running any sub-skill, make sure a config exists. This index owns
+onboarding; the sub-skills stay gated until `config.yaml` is present.
+
+1. **Detect.** If `.ib-suite/config.yaml` already exists, config is ready —
+   skip to §2. Otherwise continue.
+   ```bash
+   test -f .ib-suite/config.yaml && echo "config ready" || echo "needs setup"
+   ```
+2. **Ensure the venv** (only if missing):
+   ```bash
+   test -d {baseDir}/.venv || bash {baseDir}/scripts/setup_venv.sh
+   ```
+3. **Ask the user one question:** connect to **live** (real account, port 4001)
+   or **paper** (simulated, port 4002)? Default is **live** — every connection
+   in this toolchain is `readonly=True`, so live is read-only too.
+4. **Generate the config** with the chosen mode (defaults to live):
+   ```bash
+   {baseDir}/.venv/bin/python {baseDir}/scripts/init_config.py \
+     --mode live --out .ib-suite/config.yaml
+   ```
+   It refuses to overwrite an existing config unless you add `--force`.
+5. **Report back:** the config path and the resulting mode/port. Remind the
+   user to start IB Gateway with **Read-Only API** enabled before `/ib-sync`,
+   and to `export FLEX_TOKEN=…` only when pulling Flex dividends/history.
+6. Proceed to §2 and run `/ib-sync` → `/ib-analyze`.
+
+Runtime config and data stay workspace-local under `<workspace>/.ib-suite/`
+(gitignored); the skill dir ships only code and `config.example.yaml`.
 
 ## 1. Directory overview
 
