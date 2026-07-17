@@ -28,7 +28,7 @@ Run `ib-gateway`'s `/ib-sync` first so a snapshot exists under `data/snapshots/`
 ## /ib-analyze — run all diagnostics
 
 ```bash
-{baseDir}/../../.venv/bin/python {baseDir}/scripts/analyze.py \
+{baseDir}/../.venv/bin/python {baseDir}/scripts/analyze.py \
   --config ./config.yaml \
   --snapshot data/snapshots/<account>/<ts>.json \
   --bars bars.json \
@@ -46,7 +46,7 @@ Pass Flex-sourced dividend history (a JSON array of `Dividend` rows) to include
 income diagnostics:
 
 ```bash
-{baseDir}/../../.venv/bin/python {baseDir}/scripts/analyze.py \
+{baseDir}/../.venv/bin/python {baseDir}/scripts/analyze.py \
   --config ./config.yaml \
   --snapshot data/snapshots/<account>/<ts>.json \
   --dividends dividends.json \

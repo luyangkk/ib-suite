@@ -4,7 +4,7 @@
 
 **Goal:** 把 `setup_venv.sh` + `ib-common` + 两个子技能 + 索引 SKILL.md 收进单一自包含目录 `skills/ib-suite/`，使 OpenClaw 安装 `skills/` 时带走整套工具链且命令仍可运行。
 
-**Architecture:** 纯目录搬迁 + 相对路径重定位 + 文档约定，不改任何 Python 计算逻辑。`scripts/` 与子技能一起下沉一层，因此子技能内 `{baseDir}/../../` 深度保持不变；只有"以仓库根为基准"的索引 SKILL.md、`setup_venv.sh`、`requirements.txt` 少数几处需改。
+**Architecture:** 纯目录搬迁 + 相对路径重定位 + 文档约定，不改任何 Python 计算逻辑。注意：`scripts/` 原在仓库根（`skills/` 之外），搬迁后落到 `skills/ib-suite/scripts/`，相对子技能反而**靠近一层**——子技能内指向共享 `scripts/` 与 `.venv/` 的引用必须由 `{baseDir}/../../` 改为 `{baseDir}/../`（`{baseDir}/../ib-common` 本就是单层，保持不变）。索引 SKILL.md、`setup_venv.sh`、`requirements.txt` 因基准变化亦需相应调整。
 
 **Tech Stack:** bash（setup_venv.sh）、Python 3.11+（pytest/ib_common/ib_analyst）、Markdown（SKILL.md/CLAUDE.md）、git mv。
 

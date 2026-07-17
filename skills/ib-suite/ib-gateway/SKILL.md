@@ -17,7 +17,7 @@ places or modifies orders; it connects with `readonly=True` and only reads.
 ## Setup (once)
 
 ```bash
-bash {baseDir}/../../scripts/setup_venv.sh
+bash {baseDir}/../scripts/setup_venv.sh
 cp {baseDir}/../ib-common/config.example.yaml ./config.yaml   # then edit ports/thresholds
 ```
 
@@ -29,7 +29,7 @@ live account, tick **Read-Only API** in Gateway settings as an extra guard.
 ### /ib-sync — snapshot current account + positions
 
 ```bash
-{baseDir}/../../.venv/bin/python {baseDir}/scripts/ib_sync.py --config ./config.yaml
+{baseDir}/../.venv/bin/python {baseDir}/scripts/ib_sync.py --config ./config.yaml
 ```
 
 Writes `data/snapshots/<account>/<ts>.json` (instantaneous state) and appends
@@ -38,7 +38,7 @@ Writes `data/snapshots/<account>/<ts>.json` (instantaneous state) and appends
 ### Flex history (dividends, trades > 7 days old)
 
 ```bash
-{baseDir}/../../.venv/bin/python -c "import sys; sys.path.insert(0,'{baseDir}/scripts'); \
+{baseDir}/../.venv/bin/python -c "import sys; sys.path.insert(0,'{baseDir}/scripts'); \
 import flex_fetch; print(flex_fetch.fetch_flex_report('$FLEX_TOKEN','$FLEX_QUERY_ID'))"
 ```
 
