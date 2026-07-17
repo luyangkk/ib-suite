@@ -25,9 +25,9 @@ This SKILL.md is the entry point. It does not run anything itself — it tells y
 
 | Component | What it is | Runs a command? | Network? |
 |---|---|---|---|
-| [ib-common](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-suite/ib-common) | Shared `pip`-installable package (config / schema / storage / metrics / charts). **Not a skill.** | No | No |
-| [ib-gateway](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-suite/ib-gateway) | Read-only ingestion skill → `/ib-sync` | Yes | Yes (IB Gateway / Flex) |
-| [ib-portfolio-analyst](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-suite/ib-portfolio-analyst) | Offline diagnostics skill → `/ib-analyze` | Yes | No |
+| [ib-common]({baseDir}/ib-common) | Shared `pip`-installable package (config / schema / storage / metrics / charts). **Not a skill.** | No | No |
+| [ib-gateway]({baseDir}/ib-gateway) | Read-only ingestion skill → `/ib-sync` | Yes | Yes (IB Gateway / Flex) |
+| [ib-portfolio-analyst]({baseDir}/ib-portfolio-analyst) | Offline diagnostics skill → `/ib-analyze` | Yes | No |
 
 ```
 skills/ib-suite/
@@ -71,10 +71,10 @@ setup_venv.sh        ->  ib-gateway /ib-sync      ->  ib-portfolio-analyst /ib-a
 2. **Ingest (ib-gateway, online).** Start IB Gateway (paper 4002 / live 4001)
    with API access, then run `/ib-sync`. Writes `data/snapshots/<account>/<ts>.json`
    and appends `data/timeseries/positions_history.parquet`. See
-   [ib-gateway/SKILL.md](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-suite/ib-gateway/SKILL.md).
+   [ib-gateway/SKILL.md]({baseDir}/ib-gateway/SKILL.md).
 3. **Analyze (ib-portfolio-analyst, offline).** Run `/ib-analyze` against a
    snapshot to produce `report.md` + `.html`/`.png` charts. See
-   [ib-portfolio-analyst/SKILL.md](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/skills/ib-suite/ib-portfolio-analyst/SKILL.md).
+   [ib-portfolio-analyst/SKILL.md]({baseDir}/ib-portfolio-analyst/SKILL.md).
 
 **Which skill do I run?**
 
@@ -140,25 +140,3 @@ output paths) to stdout and return non-zero on failure:
 **As a library.** `import ib_common` (installed editable) for config/schema/
 storage/metrics/charts. Secrets are passed via environment only — e.g. the Flex
 token as `$FLEX_TOKEN`; never hardcode tokens, account numbers, or user paths.
-
-## 5. Version & maintenance
-
-- **Suite version:** `0.1.0` (aligned with `ib-common` `0.1.0`).
-- **Maintainers:** IB analyst toolchain owners — see repository git history /
-  `CLAUDE.md` for the authoritative project rules and conventions.
-- **Test baseline:** `54 passed`.
-  ```bash
-  skills/ib-suite/.venv/bin/python -m pytest skills -q          # full suite
-  skills/ib-suite/.venv/bin/python -m pytest skills/ib-suite/ib-portfolio-analyst -q   # one skill
-  ```
-
-### Changelog
-
-| Version | Summary |
-|---|---|
-| 0.1.0 | Initial toolchain. `ib-common` shared package (config/schema/storage/metrics/charts). `ib-gateway`: `/ib-sync` read-only IB pull + Flex Web Service fetch/parse. `ib-portfolio-analyst`: `/ib-analyze` producing a P0–P3 report across account health, concentration, P&L attribution, trade review, portfolio risk, pre-trade simulation, and dividend analysis. Baseline: 54 tests passing. |
-
-> Detailed design history lives in
-> [docs/superpowers/plans/](file:///Users/bytedance/Work/aiWorkspace/openclaw-ib-skill/docs/superpowers/plans)
-> (Plan 1 foundation / Plan 2 diagnostics / Plan 3 dividends) — consult on demand,
-> don't load wholesale.
