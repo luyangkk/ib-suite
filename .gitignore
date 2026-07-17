@@ -6,3 +6,5 @@ __pycache__/
 # archived run artifacts (charts/snapshots) are NOT committed by default
 data/runs/
 .ib-suite/
+workspace/
+docs/
