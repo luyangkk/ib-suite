@@ -8,3 +8,4 @@ data/runs/
 .ib-suite/
 workspace/
 docs/
+.DS_Store
