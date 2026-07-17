@@ -5,3 +5,4 @@ __pycache__/
 *.egg-info/
 # archived run artifacts (charts/snapshots) are NOT committed by default
 data/runs/
+.ib-suite/

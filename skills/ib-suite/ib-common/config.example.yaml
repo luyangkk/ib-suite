@@ -1,4 +1,4 @@
-# skills/ib-common/config.example.yaml
+# skills/ib-suite/ib-common/config.example.yaml
 connection:
   host: 127.0.0.1
   port: 4002          # 4002 = paper, 4001 = live
