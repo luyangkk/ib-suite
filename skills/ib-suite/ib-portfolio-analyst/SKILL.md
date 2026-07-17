@@ -1,6 +1,6 @@
 ---
 name: ib-portfolio-analyst
-description: Read-only IB diagnostics: account health, concentration, P&L attribution, trade review, portfolio risk, pre-trade check — a P0-P3 findings report with charts.
+description: "Read-only IB diagnostics: account health, concentration, P&L attribution, trade review, portfolio risk, pre-trade check — a P0-P3 findings report with charts."
 metadata:
   openclaw:
     requires:
@@ -17,7 +17,9 @@ reads snapshots, bars and executions that were already synced.
 
 ## Prerequisite
 
-Run `ib-gateway`'s `/ib-sync` first so a snapshot exists under `data/snapshots/`.
+Config and the shared venv are owned by the `ib-suite` index skill (see its
+first-run setup). Run `ib-gateway`'s `/ib-sync` first so a snapshot exists under
+`data/snapshots/`.
 
 > **v1 input note:** `/ib-sync` currently lands only the account snapshot and
 > positions. Daily bars, executions and dividends are **optional JSON inputs**
@@ -29,7 +31,7 @@ Run `ib-gateway`'s `/ib-sync` first so a snapshot exists under `data/snapshots/`
 
 ```bash
 {baseDir}/../.venv/bin/python {baseDir}/scripts/analyze.py \
-  --config ./config.yaml \
+  --config .ib-suite/config.yaml \
   --snapshot data/snapshots/<account>/<ts>.json \
   --bars bars.json \
   --executions executions.json \
@@ -47,7 +49,7 @@ income diagnostics:
 
 ```bash
 {baseDir}/../.venv/bin/python {baseDir}/scripts/analyze.py \
-  --config ./config.yaml \
+  --config .ib-suite/config.yaml \
   --snapshot data/snapshots/<account>/<ts>.json \
   --dividends dividends.json \
   --out data/runs/$(date +%Y%m%dT%H%M%S)
