@@ -6,7 +6,7 @@ only on these types, never on raw ib_async objects.
 """
 from __future__ import annotations
 from datetime import date, datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 
 class Account(BaseModel):
@@ -21,7 +21,14 @@ class Account(BaseModel):
 
 
 class Position(BaseModel):
-    """A single held position with cost basis and mark-to-market values."""
+    """A single held position with cost basis and mark-to-market values.
+
+    `market_value`/`unrealized_pnl` are in the position's own `currency`.
+    `fx_rate` converts that currency into the account base currency (1.0 when
+    the position is already in base). Use `base_value`/`base_unrealized_pnl`
+    whenever aggregating across positions — summing raw `market_value` mixes
+    currencies and understates or overstates the book.
+    """
 
     account_id: str
     symbol: str
@@ -32,6 +39,19 @@ class Position(BaseModel):
     market_price: float
     market_value: float
     unrealized_pnl: float
+    fx_rate: float = 1.0   # local currency -> account base; 1.0 when already base
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def base_value(self) -> float:
+        """Market value converted into the account base currency."""
+        return self.market_value * self.fx_rate
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def base_unrealized_pnl(self) -> float:
+        """Unrealized P&L converted into the account base currency."""
+        return self.unrealized_pnl * self.fx_rate
 
 
 class Execution(BaseModel):

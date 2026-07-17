@@ -1,10 +1,12 @@
 # skills/ib-portfolio-analyst/ib_analyst/concentration.py
 """Diagnostic module 2: position concentration (top-name weight + HHI).
 
-Weights are computed on gross market value in the account base currency.
-The treemap visualizes where capital actually sits.
+Weights are computed on net exposure per symbol in the account base currency:
+rows sharing a symbol (e.g. a stock leg and option legs) are summed signed
+first, then taken absolute. The treemap visualizes where capital actually sits.
 """
 from __future__ import annotations
+from collections import defaultdict
 import plotly.graph_objects as go
 from ib_common.schema import Snapshot
 from ib_common.metrics.risk import hhi
@@ -13,10 +15,24 @@ from .findings import Finding, Priority, grade
 DIM = "concentration"
 
 
+def _net_exposure(snapshot: Snapshot) -> dict[str, float]:
+    """Net (signed) market value per symbol; legs of the same name are summed.
+
+    A symbol may span several rows (e.g. a stock leg plus option legs). We sum
+    the signed market values first so a short option hedge nets against the
+    stock, then callers take absolute values for weights.
+    """
+    net: dict[str, float] = defaultdict(float)
+    for p in snapshot.positions:
+        net[p.symbol] += p.base_value   # base ccy, FX-converted before summing
+    return dict(net)
+
+
 def _weights(snapshot: Snapshot) -> dict[str, float]:
-    """Gross-market-value weights per symbol; sums to 1 (or empty)."""
-    gross = sum(abs(p.market_value) for p in snapshot.positions) or 1.0
-    return {p.symbol: abs(p.market_value) / gross for p in snapshot.positions}
+    """Net-exposure weights per symbol; sums to 1 (or empty)."""
+    net = _net_exposure(snapshot)
+    gross = sum(abs(v) for v in net.values()) or 1.0
+    return {sym: abs(v) / gross for sym, v in net.items()}
 
 
 def analyze(snapshot: Snapshot, thresholds: dict) -> list[Finding]:

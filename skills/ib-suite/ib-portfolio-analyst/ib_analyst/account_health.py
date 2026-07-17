@@ -16,7 +16,7 @@ def analyze(snapshot: Snapshot, thresholds: dict) -> list[Finding]:
     """Return account-health findings: cash-ratio and leverage checks."""
     acct = snapshot.account
     nlv = acct.net_liquidation or 1.0
-    gross = sum(abs(p.market_value) for p in snapshot.positions)
+    gross = sum(abs(p.base_value) for p in snapshot.positions)   # base ccy, FX-converted
     cash_ratio = acct.total_cash / nlv
     leverage = gross / nlv
 

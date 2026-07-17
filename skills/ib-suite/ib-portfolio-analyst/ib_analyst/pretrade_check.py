@@ -21,8 +21,8 @@ def simulate(snapshot: Snapshot, symbol: str, side: str, quantity: float,
     signed_qty = quantity if side.upper().startswith("B") else -quantity
     delta_value = signed_qty * price
 
-    # rebuild gross exposure with the hypothetical fill
-    values = {p.symbol: p.market_value for p in snapshot.positions}
+    # rebuild gross exposure with the hypothetical fill (existing rows in base ccy)
+    values = {p.symbol: p.base_value for p in snapshot.positions}
     values[symbol] = values.get(symbol, 0.0) + delta_value
     gross = sum(abs(v) for v in values.values()) or 1.0
     nlv = snapshot.account.net_liquidation or 1.0

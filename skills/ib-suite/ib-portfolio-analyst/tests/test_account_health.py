@@ -27,3 +27,23 @@ def test_findings_are_complete():
     for f in account_health.analyze(_snap(), TH):
         assert f.finding and f.impact and f.suggestion and f.trigger_condition
         assert 0.0 <= f.confidence <= 1.0
+
+
+def test_leverage_converts_non_base_currency():
+    """Gross leverage must use base-currency values, not raw mixed-currency sums."""
+    snap = Snapshot.model_validate({
+        "account": {"account_id": "U0", "base_currency": "USD",
+                    "net_liquidation": 10000.0, "total_cash": 0.0,
+                    "buying_power": 0.0, "ts": "2026-07-17T00:00:00Z"},
+        "positions": [
+            {"account_id": "U0", "symbol": "D05", "sec_type": "STK",
+             "currency": "SGD", "quantity": 1.0, "avg_cost": 0.0,
+             "market_price": 0.0, "market_value": 20000.0,
+             "unrealized_pnl": 0.0, "fx_rate": 0.5},
+        ],
+        "ts": "2026-07-17T00:00:00Z",
+    })
+    lev = next(f for f in account_health.analyze(snap, TH)
+               if "leverage" in f.finding.lower())
+    # 20000 SGD @ 0.5 = 10000 USD gross / 10000 NLV = 1.0x, not 2.0x
+    assert abs(lev.evidence["leverage"] - 1.0) < 1e-6

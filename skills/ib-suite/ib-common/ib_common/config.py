@@ -15,6 +15,7 @@ class ConnectionCfg(BaseModel):
     port: int = 4002            # IB Gateway paper default; live is 4001
     client_id: int = 17
     read_only: bool = True      # never flip silently; read-only by default
+    market_data_type: str = "delayed"  # delayed marks work without a live subscription
 
 
 class DataCfg(BaseModel):

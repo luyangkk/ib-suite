@@ -18,8 +18,9 @@ def attribute(snapshot: Snapshot) -> dict[str, float]:
     out: dict[str, float] = {}
     total = 0.0
     for p in snapshot.positions:
-        out[p.symbol] = out.get(p.symbol, 0.0) + p.unrealized_pnl
-        total += p.unrealized_pnl
+        pnl = p.base_unrealized_pnl   # base ccy, FX-converted before summing
+        out[p.symbol] = out.get(p.symbol, 0.0) + pnl
+        total += pnl
     out["_total"] = total
     return out
 
@@ -28,9 +29,24 @@ def analyze(snapshot: Snapshot, thresholds: dict) -> list[Finding]:
     """Flag the single largest contributor to gross unrealized P&L."""
     a = attribute(snapshot)
     per_name = {k: v for k, v in a.items() if k != "_total"}
-    gross = sum(abs(v) for v in per_name.values()) or 1.0
     if not per_name:
         return []
+
+    gross = sum(abs(v) for v in per_name.values())
+    if gross == 0.0:
+        # ib_sync v1 lands avg_cost as a market_price placeholder, so every
+        # unrealized_pnl is 0. Attributing 0% to some name would be misleading;
+        # report the data gap instead.
+        return [Finding(
+            priority=Priority.P3, dimension=DIM,
+            finding="P&L attribution unavailable: no unrealized P&L in snapshot",
+            evidence={"total_unrealized": a["_total"], "n_positions": len(per_name)},
+            impact="cannot tell which names drive the book without live mark-to-market",
+            suggestion="sync live/delayed market prices so market_price != avg_cost",
+            trigger_condition="gross unrealized P&L == 0 across all positions",
+            confidence=0.99,
+            data_limitations="no unrealized P&L: market_price equals avg_cost (ib_sync v1 placeholder)",
+        )]
 
     sym, val = max(per_name.items(), key=lambda kv: abs(kv[1]))
     share = abs(val) / gross

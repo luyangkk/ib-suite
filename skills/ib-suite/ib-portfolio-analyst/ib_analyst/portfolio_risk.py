@@ -33,8 +33,8 @@ def portfolio_returns(snapshot: Snapshot, bars: list[DailyBar]) -> list[float]:
     rets = _returns_by_symbol(bars)
     if not rets:
         return []
-    gross = sum(abs(p.market_value) for p in snapshot.positions) or 1.0
-    weights = {p.symbol: abs(p.market_value) / gross for p in snapshot.positions}
+    gross = sum(abs(p.base_value) for p in snapshot.positions) or 1.0
+    weights = {p.symbol: abs(p.base_value) / gross for p in snapshot.positions}
     n = min(len(v) for v in rets.values())
     port = np.zeros(n)
     for sym, series in rets.items():

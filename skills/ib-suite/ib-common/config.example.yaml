@@ -4,6 +4,7 @@ connection:
   port: 4002          # 4002 = paper, 4001 = live
   client_id: 17
   read_only: true     # keep true; this project never places orders
+  market_data_type: delayed  # realtime | frozen | delayed | delayed_frozen (delayed needs no live subscription)
 data:
   freshness_hours: 24
   base_currency: null # null => follow the IB account BASE currency

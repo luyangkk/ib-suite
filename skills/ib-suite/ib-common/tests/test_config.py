@@ -24,3 +24,9 @@ def test_base_currency_missing_raises():
     cfg.data.base_currency = None
     with pytest.raises(ValueError):
         resolve_base_currency(cfg, None)
+
+
+def test_market_data_type_defaults_to_delayed():
+    """Accounts without a live subscription still get delayed marks by default."""
+    cfg = load_config(FIX / "config_minimal.yaml")
+    assert cfg.connection.market_data_type == "delayed"
