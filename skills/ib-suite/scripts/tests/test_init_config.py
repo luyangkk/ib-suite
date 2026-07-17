@@ -45,6 +45,7 @@ def test_template_defaults_preserved(tmp_path):
     # storage.root and base_currency come straight from the template
     assert cfg.storage.root == ".ib-suite/data"
     assert cfg.data.base_currency is None
+    assert cfg.connection.read_only is True
     # thresholds copied verbatim (spot-check a couple of keys)
     assert cfg.thresholds["leverage_crit"] == 2.0
     assert cfg.thresholds["single_position_weight_warn"] == 0.20

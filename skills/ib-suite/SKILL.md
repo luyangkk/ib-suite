@@ -89,7 +89,7 @@ setup_venv.sh        ->  ib-gateway /ib-sync      ->  ib-portfolio-analyst /ib-a
    and installs `ib-common` (editable) plus runtime deps. Idempotent.
    ```bash
    bash {baseDir}/scripts/setup_venv.sh
-   cp {baseDir}/ib-common/config.example.yaml ./config.yaml   # then edit ports/thresholds
+   # config.yaml is created by "0. First-run setup" (writes .ib-suite/config.yaml)
    ```
 
    **Runtime data lives outside the skill dir.** Keep the real `config.yaml` and
@@ -159,11 +159,11 @@ output paths) to stdout and return non-zero on failure:
 
 ```bash
 # ingest
-{baseDir}/.venv/bin/python {baseDir}/ib-gateway/scripts/ib_sync.py --config ./config.yaml
+{baseDir}/.venv/bin/python {baseDir}/ib-gateway/scripts/ib_sync.py --config .ib-suite/config.yaml
 
 # analyze (bars/executions/dividends optional)
 {baseDir}/.venv/bin/python {baseDir}/ib-portfolio-analyst/scripts/analyze.py \
-  --config ./config.yaml \
+  --config .ib-suite/config.yaml \
   --snapshot data/snapshots/<account>/<ts>.json \
   --out data/runs/$(date +%Y%m%dT%H%M%S)
 ```
