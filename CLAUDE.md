@@ -119,6 +119,22 @@ gitignored and created at runtime; the skill directory ships only code and
 
 ## 4. SKILL.md Rules
 
+**Authoritative spec.** These bullets are *this repo's* constraints layered on
+top of the OpenClaw skill format. Before changing any `SKILL.md` frontmatter,
+read and conform to the two tracked spec docs (they ship with the repo):
+
+- `docs/openclaw-creating-skills.md` — how to author a skill: required fields
+  (`name`, `description`), optional keys (`user-invocable`, `command-dispatch`,
+  `homepage`, …), `{baseDir}` resolution, and conditional activation / gating.
+- `docs/openclaw-skill-format.md` — the on-disk format and the full
+  `metadata.openclaw` field reference (`requires.bins`/`anyBins`/`env`/`config`,
+  `envVars`, `primaryEnv`, `always`, `os`, `install`, …), plus naming/slug rules.
+
+When a bullet below and the spec disagree, the **spec wins on format** (field
+names, allowed keys, on-disk layout); the bullets only add **project rules**
+(read-only boundary, `name == directory`, the `{baseDir}/../.venv` path). Any new
+frontmatter key must exist in the spec's field reference — do not invent keys.
+
 - Must keep valid YAML frontmatter that includes `metadata.openclaw` — this is how
   OpenClaw discovers and gates the skill; deleting or breaking it makes the skill
   untriggerable.
