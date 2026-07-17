@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FlexQueryResponse queryName="analyst" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="2026-01-01" toDate="2026-07-15">
+      <Trades>
+        <Trade symbol="AAPL" buySell="BUY" quantity="100" tradePrice="150.00"
+               ibCommission="-1.00" tradeDate="2026-02-01" tradeID="T1"/>
+      </Trades>
+      <CashTransactions>
+        <CashTransaction symbol="AAPL" type="Dividends" amount="24.00" currency="USD"
+                         dateTime="2026-05-15" settleDate="2026-05-20"/>
+      </CashTransactions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

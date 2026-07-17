@@ -134,12 +134,28 @@ pytest>=8.0
 ```bash
 #!/usr/bin/env bash
 # Create the shared virtualenv and install ib-common (editable) + runtime deps.
-# Idempotent: safe to re-run.
+# Idempotent: safe to re-run. The project requires Python >= 3.11, so this
+# script picks the first >= 3.11 interpreter it finds instead of assuming the
+# system `python3` qualifies (on many machines `python3` is still 3.9).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-python3 -m venv .venv
+# Find a Python >= 3.11 interpreter from a portable candidate list.
+find_python() {
+  for cand in python3.13 python3.12 python3.11 /opt/miniconda3/bin/python python3; do
+    if command -v "$cand" >/dev/null 2>&1 && \
+       "$cand" -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3, 11) else 1)' 2>/dev/null; then
+      echo "$cand"; return 0
+    fi
+  done
+  return 1
+}
+
+PY="$(find_python)" || { echo "error: no Python >= 3.11 interpreter found on PATH" >&2; exit 1; }
+echo "using interpreter: $PY ($("$PY" --version 2>&1))"
+
+"$PY" -m venv .venv
 # shellcheck disable=SC1091
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -149,8 +165,8 @@ echo "venv ready: $ROOT/.venv"
 
 - [ ] **Step 5: Run bootstrap to verify it succeeds**
 
-Run: `bash scripts/setup_venv.sh && .venv/bin/python -c "import ib_common, pydantic, pandas, pyarrow, plotly, kaleido; print('ok')"`
-Expected: prints `ok` (may take a minute on first install).
+Run: `bash scripts/setup_venv.sh && .venv/bin/python -c "import pydantic, pandas, pyarrow, numpy, plotly, kaleido; print('ok')"`
+Expected: prints `ok` (may take a minute on first install). Note: `ib_common` itself has no source yet — its `ib_common/` package is created in Task 1 — so it is intentionally NOT imported here. The editable install of the `ib-common` *distribution* still succeeds (it just installs no importable module until Task 1).
 
 - [ ] **Step 6: Commit**
 
@@ -296,11 +312,41 @@ data:
 storage:
   root: ./data
 thresholds:
+  # account_health: cash buffer (lower is riskier) and gross leverage
+  cash_ratio_warn: 0.10               # P2 when cash < 10% of net liquidation
+  cash_ratio_crit: 0.05               # P1 when cash < 5%
+  leverage_warn: 1.5                  # P2 when gross exposure > 1.5x NLV
+  leverage_crit: 2.0                  # P1 when > 2.0x
+  # concentration: single-name weight and portfolio HHI
   single_position_weight_warn: 0.20   # P2 when one name > 20% of portfolio
   single_position_weight_crit: 0.35   # P1 when > 35%
   hhi_concentration_warn: 0.18
+  hhi_concentration_crit: 0.30
+  # pnl_attribution: share of gross unrealized P&L from one name
+  pnl_contrib_warn: 0.50              # P2 when one name drives > 50%
+  # trade_review: commission drag in bps of traded notional
+  commission_bps_warn: 5.0
+  commission_bps_crit: 15.0
+  # portfolio_risk: 1-day 95% historical VaR and sample max drawdown
+  var95_warn: 0.02
+  var95_crit: 0.05
   max_drawdown_warn: 0.20
+  max_drawdown_crit: 0.30
+  # dividends: yield on cost (higher is better) and withholding-tax drag
+  yield_on_cost_warn: 0.02            # P2 when best held yield on cost < 2%
+  yield_on_cost_crit: 0.01            # P1 when < 1%
+  withholding_drag_warn: 0.10         # P2 when tax > 10% of gross dividends
+  withholding_drag_crit: 0.20         # P1 when > 20%
 ```
+
+> **Note (added during Plan 2 execution):** the full threshold set above is
+> required by the Plan 2 diagnostic modules. The example must ship every key
+> so `/ib-analyze` runs against a copied `config.yaml` without a `KeyError`.
+>
+> **Note (added during Plan 3 execution):** the four `yield_on_cost_*` /
+> `withholding_drag_*` keys were appended for the Plan 3 dividend module, for
+> the same reason — running `/ib-analyze --dividends ...` against a copied
+> example must not `KeyError` inside `dividend_analysis.analyze`.
 
 - [ ] **Step 6: Run test to verify it passes**
 
@@ -1030,7 +1076,7 @@ def parse_flex_dividends(xml_text: str) -> list[Dividend]:
         out.append(Dividend(
             symbol=ct.get("symbol", ""),
             ex_date=_parse_date(ct.get("dateTime", "1970-01-01")),
-            pay_date=_parse_date(ct["settleDate"]) if ct.get("settleDate") else None,
+            pay_date=_parse_date(ct.get("settleDate")) if ct.get("settleDate") else None,
             gross=float(ct.get("amount", 0.0)),
             tax=0.0,
             currency=ct.get("currency", ""),

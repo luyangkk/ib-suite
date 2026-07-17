@@ -1,0 +1,5 @@
+[
+  {"symbol": "AAPL", "ex_date": "2026-02-07", "pay_date": "2026-02-15", "gross": 24.0, "tax": 0.0, "currency": "USD"},
+  {"symbol": "MSFT", "ex_date": "2026-03-12", "pay_date": "2026-03-20", "gross": 37.5, "tax": 0.0, "currency": "USD"},
+  {"symbol": "TSM", "ex_date": "2026-04-10", "pay_date": "2026-04-18", "gross": 50.0, "tax": 10.5, "currency": "USD"}
+]
