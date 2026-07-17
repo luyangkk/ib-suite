@@ -60,6 +60,14 @@ setup_venv.sh        ->  ib-gateway /ib-sync      ->  ib-portfolio-analyst /ib-a
    bash {baseDir}/scripts/setup_venv.sh
    cp {baseDir}/ib-common/config.example.yaml ./config.yaml   # then edit ports/thresholds
    ```
+
+   **Runtime data lives outside the skill dir.** Keep the real `config.yaml` and
+   the data lake under the workspace, e.g. `<workspace>/.ib-suite/config.yaml`
+   and `<workspace>/.ib-suite/data/` (set `storage.root: .ib-suite/data`). The
+   skill directory ships only code and `config.example.yaml`; reinstalling the
+   skill must never overwrite user data. Entry scripts take explicit `--config`
+   / `--out` and don't depend on the current working directory.
+
 2. **Ingest (ib-gateway, online).** Start IB Gateway (paper 4002 / live 4001)
    with API access, then run `/ib-sync`. Writes `data/snapshots/<account>/<ts>.json`
    and appends `data/timeseries/positions_history.parquet`. See
