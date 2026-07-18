@@ -22,6 +22,11 @@ from ib_common.schema import (
 
 _GREEKS = ("delta", "gamma", "theta", "vega")
 
+_MARKET_DATA_DISABLED_LIMITATION = (
+    "market data disabled (options.fetch_market_data=false) to avoid IBKR "
+    "snapshot fees; Greeks, IV, underlying price and moneyness are unavailable"
+)
+
 
 def classify_moneyness(
     right: str, strike: float, underlying_price: float | None
@@ -234,6 +239,9 @@ def build_options_overview(
     """Map raw account option data into typed positions and aggregate risk."""
     account = raw["account"]
     account_id = account["account_id"]
+    # Default True keeps injected-mock raw payloads (which omit the flag) on the
+    # existing per-contract limitation path.
+    market_data_enabled = raw.get("market_data_enabled", True)
     views: list[OptionPositionView] = []
     limitations: list[str] = []
 
@@ -289,7 +297,12 @@ def build_options_overview(
             ),
         )
         views.append(view)
-        limitations.extend(_limitations_for(view))
+        if market_data_enabled:
+            limitations.extend(_limitations_for(view))
+
+    if not market_data_enabled:
+        # One clear note instead of per-contract "missing Greeks" noise.
+        limitations.append(_MARKET_DATA_DISABLED_LIMITATION)
 
     summary, summary_limitations = build_summary(views)
     return OptionsOverview(
@@ -418,6 +431,7 @@ def _default_client_factory(cfg):
 
         def __init__(self, cfg):
             """Connect with IB's enforced read-only Gateway API mode."""
+            self._market_data = cfg.options.fetch_market_data
             self.ib = IB()
             self.ib.connect(
                 cfg.connection.host,
@@ -425,9 +439,12 @@ def _default_client_factory(cfg):
                 clientId=cfg.connection.client_id,
                 readonly=True,
             )
-            self.ib.reqMarketDataType(
-                _market_data_type_code(cfg.connection.market_data_type)
-            )
+            # Free mode never touches market data, so we do not even request a
+            # data type — that keeps the run away from any snapshot billing.
+            if self._market_data:
+                self.ib.reqMarketDataType(
+                    _market_data_type_code(cfg.connection.market_data_type)
+                )
 
         def fetch_raw(self) -> dict:
             """Read IB-valued option positions and their bounded quote snapshot."""
@@ -443,6 +460,44 @@ def _default_client_factory(cfg):
                 for item in self.ib.portfolio(account_id)
                 if item.contract.secType == "OPT"
             ]
+            if not self._market_data:
+                # Free mode: no reqMktData at all. Position, price, market value
+                # and P&L are IB-computed portfolio fields (no snapshot billing);
+                # Greeks, IV and the underlying price are left unavailable.
+                options = [
+                    {
+                        "contract_id": _contract_id(item.contract),
+                        "underlying_symbol": item.contract.symbol,
+                        "right": _option_right(item.contract.right),
+                        "strike": item.contract.strike,
+                        "expiry_date": str(
+                            item.contract.lastTradeDateOrContractMonth
+                        ),
+                        "multiplier": str(item.contract.multiplier),
+                        "quantity": item.position,
+                        "avg_cost": item.averageCost,
+                        "market_price": item.marketPrice,
+                        "market_value": item.marketValue,
+                        "unrealized_pnl": item.unrealizedPNL,
+                        "currency": item.contract.currency,
+                        "fx_rate": fx_rates.get(item.contract.currency),
+                        "implied_volatility": None,
+                        "delta": None,
+                        "gamma": None,
+                        "theta": None,
+                        "vega": None,
+                        "underlying_price": None,
+                    }
+                    for item in positions
+                ]
+                return {
+                    "account": {
+                        "account_id": account_id,
+                        "base_currency": base_currency,
+                    },
+                    "options": options,
+                    "market_data_enabled": False,
+                }
             option_subscriptions: list[tuple[object, object]] = []
             underlying_subscriptions: dict[tuple[str, str], tuple[object, object]] = {}
             try:
@@ -547,6 +602,7 @@ def _default_client_factory(cfg):
                     "base_currency": base_currency,
                 },
                 "options": options,
+                "market_data_enabled": True,
             }
 
         def disconnect(self) -> None:

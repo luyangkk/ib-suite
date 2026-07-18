@@ -1,0 +1,7 @@
+# skills/ib-common/tests/fixtures/config_options_market_data.yaml
+data:
+  base_currency: USD
+storage:
+  root: ./data
+options:
+  fetch_market_data: true

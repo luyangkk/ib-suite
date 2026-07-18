@@ -13,6 +13,13 @@ storage:
 flex:
   token: null       # workspace-local secret; never commit a real value
   query_id: null    # IBKR Flex Query ID
+options:
+  # false (default): skip all option market-data requests — no Greeks/IV, but
+  # zero snapshot-fee risk. Position, price, market value and P&L still work
+  # (IB-computed portfolio fields, free). Set true to briefly subscribe for
+  # Greeks/IV; this may incur IBKR snapshot charges for symbols without a
+  # real-time market-data subscription.
+  fetch_market_data: false
 thresholds:
   # account_health: cash buffer (lower is riskier) and gross leverage
   cash_ratio_warn: 0.10               # P2 when cash < 10% of net liquidation

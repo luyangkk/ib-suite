@@ -402,7 +402,10 @@ def test_live_client_collects_option_greeks_and_cancels_market_data(
         SimpleNamespace(IB=FakeIB, Stock=FakeStock),
     )
     cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text("connection:\n  market_data_type: delayed\n")
+    cfg_path.write_text(
+        "connection:\n  market_data_type: delayed\noptions:\n"
+        "  fetch_market_data: true\n"
+    )
 
     client = options_overview._default_client_factory(load_config(cfg_path))
     raw = client.fetch_raw()
@@ -553,7 +556,10 @@ def test_live_client_reuses_shared_model_price_without_fallback_wait(
         SimpleNamespace(IB=FakeIB, Stock=FakeStock),
     )
     cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text("connection:\n  market_data_type: delayed\n")
+    cfg_path.write_text(
+        "connection:\n  market_data_type: delayed\noptions:\n"
+        "  fetch_market_data: true\n"
+    )
 
     raw = options_overview._default_client_factory(load_config(cfg_path)).fetch_raw()
 
@@ -665,7 +671,10 @@ def test_live_client_deduplicates_quote_when_all_matching_models_are_missing(
         SimpleNamespace(IB=FakeIB, Stock=FakeStock),
     )
     cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text("connection:\n  market_data_type: delayed\n")
+    cfg_path.write_text(
+        "connection:\n  market_data_type: delayed\noptions:\n"
+        "  fetch_market_data: true\n"
+    )
 
     raw = options_overview._default_client_factory(load_config(cfg_path)).fetch_raw()
 
@@ -778,7 +787,10 @@ def test_live_client_preserves_identity_when_qualification_omits_a_contract(
         SimpleNamespace(IB=FakeIB, Stock=FakeStock),
     )
     cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text("connection:\n  market_data_type: delayed\n")
+    cfg_path.write_text(
+        "connection:\n  market_data_type: delayed\noptions:\n"
+        "  fetch_market_data: true\n"
+    )
 
     raw = options_overview._default_client_factory(load_config(cfg_path)).fetch_raw()
 
@@ -892,7 +904,10 @@ def test_live_client_skips_none_qualified_underlying_contract(monkeypatch, tmp_p
         SimpleNamespace(IB=FakeIB, Stock=FakeStock),
     )
     cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text("connection:\n  market_data_type: delayed\n")
+    cfg_path.write_text(
+        "connection:\n  market_data_type: delayed\noptions:\n"
+        "  fetch_market_data: true\n"
+    )
 
     raw = options_overview._default_client_factory(load_config(cfg_path)).fetch_raw()
 
@@ -1009,7 +1024,10 @@ def test_live_client_waits_full_timeout_for_only_unavailable_underlying(
         SimpleNamespace(IB=FakeIB, Stock=FakeStock),
     )
     cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text("connection:\n  market_data_type: delayed\n")
+    cfg_path.write_text(
+        "connection:\n  market_data_type: delayed\noptions:\n"
+        "  fetch_market_data: true\n"
+    )
 
     raw = options_overview._default_client_factory(load_config(cfg_path)).fetch_raw()
 
@@ -1121,7 +1139,10 @@ def test_live_client_cancels_partial_underlying_subscriptions_on_error(
         SimpleNamespace(IB=FakeIB, Stock=FakeStock),
     )
     cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text("connection:\n  market_data_type: delayed\n")
+    cfg_path.write_text(
+        "connection:\n  market_data_type: delayed\noptions:\n"
+        "  fetch_market_data: true\n"
+    )
 
     with pytest.raises(RuntimeError, match="underlying quote unavailable"):
         options_overview._default_client_factory(load_config(cfg_path)).fetch_raw()
@@ -1174,3 +1195,137 @@ def test_base_currency_falls_back_to_net_liquidation_currency():
     ]
 
     assert options_overview._account_base_currency(values) == "USD"
+
+
+def test_free_mode_reports_single_limitation_without_per_contract_noise():
+    """Disabled market data yields one clear note, not per-contract Greek noise."""
+    raw = _raw()
+    raw["market_data_enabled"] = False
+
+    overview = options_overview.build_options_overview(raw, REPORT_DATE, TS)
+
+    assert overview.data_limitations == [
+        options_overview._MARKET_DATA_DISABLED_LIMITATION
+    ]
+    assert not any("missing Greeks" in item for item in overview.data_limitations)
+
+
+def test_market_data_enabled_default_keeps_per_contract_limitations():
+    """Raw payloads without the flag keep the existing per-contract behaviour."""
+    overview = options_overview.build_options_overview(_raw(), REPORT_DATE, TS)
+
+    assert options_overview._MARKET_DATA_DISABLED_LIMITATION not in (
+        overview.data_limitations
+    )
+    assert any("MSFT" in item for item in overview.data_limitations)
+
+
+def test_live_client_free_mode_skips_market_data_and_nulls_greeks(
+    monkeypatch, tmp_path
+):
+    """Free mode never touches market data yet still reads free portfolio fields."""
+    contract = SimpleNamespace(
+        conId=1,
+        symbol="AAPL",
+        secType="OPT",
+        currency="USD",
+        lastTradeDateOrContractMonth="20260821",
+        right="C",
+        strike=200.0,
+        multiplier="100",
+    )
+
+    class FakeIB:
+        """Fail loudly if any billable market-data call is made."""
+
+        instance = None
+
+        def __init__(self):
+            FakeIB.instance = self
+            self.market_data_types = []
+            self.disconnected = False
+
+        def connect(self, *args, **kwargs):
+            self.connect_kwargs = (args, kwargs)
+
+        def reqMarketDataType(self, market_data_type):
+            self.market_data_types.append(market_data_type)
+
+        def managedAccounts(self):
+            return ["U0000000"]
+
+        def accountValues(self, account_id=None):
+            return [
+                SimpleNamespace(tag="Currency", value="USD", currency="BASE"),
+                SimpleNamespace(
+                    tag="$LEDGER-ExchangeRate", value="1.0", currency="USD"
+                ),
+            ]
+
+        def portfolio(self, account_id):
+            return [
+                SimpleNamespace(
+                    contract=contract,
+                    position=2,
+                    averageCost=1000.0,
+                    marketPrice=12.5,
+                    marketValue=2500.0,
+                    unrealizedPNL=500.0,
+                )
+            ]
+
+        def reqMktData(self, *args, **kwargs):
+            raise AssertionError("free mode must not request market data")
+
+        def cancelMktData(self, *args, **kwargs):
+            raise AssertionError("free mode must not cancel market data")
+
+        def disconnect(self):
+            self.disconnected = True
+
+    class FakeStock:
+        constructed = []
+
+        def __init__(self, symbol, exchange, currency):
+            FakeStock.constructed.append((symbol, exchange, currency))
+
+    monkeypatch.setitem(
+        sys.modules,
+        "ib_async",
+        SimpleNamespace(IB=FakeIB, Stock=FakeStock),
+    )
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("data:\n  base_currency: USD\n")
+
+    client = options_overview._default_client_factory(load_config(cfg_path))
+    raw = client.fetch_raw()
+    client.disconnect()
+
+    fake = FakeIB.instance
+    assert fake.market_data_types == []
+    assert FakeStock.constructed == []
+    assert fake.disconnected is True
+    assert raw["market_data_enabled"] is False
+    assert raw["options"] == [
+        {
+            "contract_id": "AAPL-20260821-C-200",
+            "underlying_symbol": "AAPL",
+            "right": "CALL",
+            "strike": 200.0,
+            "expiry_date": "20260821",
+            "multiplier": "100",
+            "quantity": 2,
+            "avg_cost": 1000.0,
+            "market_price": 12.5,
+            "market_value": 2500.0,
+            "unrealized_pnl": 500.0,
+            "currency": "USD",
+            "fx_rate": 1.0,
+            "implied_volatility": None,
+            "delta": None,
+            "gamma": None,
+            "theta": None,
+            "vega": None,
+            "underlying_price": None,
+        }
+    ]

@@ -34,11 +34,20 @@ class FlexCfg(BaseModel):
     query_id: str | None = None
 
 
+class OptionsCfg(BaseModel):
+    """Option-overview behaviour toggles."""
+
+    # False (default): skip every option market-data request. No Greeks/IV, but
+    # zero IBKR snapshot-fee risk. Set True to briefly subscribe for Greeks/IV.
+    fetch_market_data: bool = False
+
+
 class Config(BaseModel):
     connection: ConnectionCfg = Field(default_factory=ConnectionCfg)
     data: DataCfg = Field(default_factory=DataCfg)
     storage: StorageCfg = Field(default_factory=StorageCfg)
     flex: FlexCfg = Field(default_factory=FlexCfg)
+    options: OptionsCfg = Field(default_factory=OptionsCfg)
     thresholds: dict[str, float] = Field(default_factory=dict)
 
 

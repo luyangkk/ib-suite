@@ -37,3 +37,15 @@ def test_flex_config_defaults_to_empty_credentials():
     cfg = load_config(FIX / "config_minimal.yaml")
     assert cfg.flex.token is None
     assert cfg.flex.query_id is None
+
+
+def test_options_market_data_defaults_to_disabled():
+    """Default is the free mode: no option market-data requests, no snapshot fees."""
+    cfg = load_config(FIX / "config_minimal.yaml")
+    assert cfg.options.fetch_market_data is False
+
+
+def test_options_market_data_can_be_enabled():
+    """Explicit true opts into Greeks/IV subscription (may incur snapshot fees)."""
+    cfg = load_config(FIX / "config_options_market_data.yaml")
+    assert cfg.options.fetch_market_data is True

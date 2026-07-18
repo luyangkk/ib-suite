@@ -1,6 +1,6 @@
 ---
 name: ib-options-overview
-description: Read-only Interactive Brokers option positions and Greeks overview. Use when the user asks for open option contracts, IV, Delta, Gamma, Theta, Vega, moneyness, expiry exposure, or option concentration. Reads live positions and market data only - never places, modifies, or cancels an order.
+description: Read-only Interactive Brokers option positions and Greeks overview. Use when the user asks for open option contracts, IV, Delta, Gamma, Theta, Vega, moneyness, expiry exposure, or option concentration. Reads live positions only - never places, modifies, or cancels an order.
 metadata:
   openclaw:
     requires:
@@ -12,10 +12,18 @@ metadata:
 # ib-options-overview
 
 Read every open option position and return one JSON risk overview. This connects
-with `readonly=True`, subscribes only long enough to collect model Greeks, and
-briefly requests one deduplicated underlying quote when option model data lacks
-an underlying price. It cancels both option and underlying subscriptions
-afterward. It never places, modifies, or cancels orders.
+with `readonly=True` and never places, modifies, or cancels orders.
+
+By default it runs in **free mode** (`options.fetch_market_data: false`): it reads
+only IB-computed portfolio fields (position, price, market value, unrealized P&L)
+and requests no market data, so it never risks IBKR snapshot charges. Greeks, IV,
+underlying price, and moneyness are unavailable in this mode.
+
+To collect Greeks/IV, set `options.fetch_market_data: true` in `config.yaml`. The
+skill then briefly subscribes for model Greeks, requests one deduplicated
+underlying quote when option model data lacks an underlying price, and cancels
+both subscriptions afterward. This may incur IBKR snapshot charges for symbols
+without a real-time market-data subscription.
 
 ```bash
 {baseDir}/../.venv/bin/python {baseDir}/scripts/options_overview.py --config .ib-suite/config.yaml
