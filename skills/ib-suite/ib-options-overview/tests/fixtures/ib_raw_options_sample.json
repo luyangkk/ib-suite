@@ -1,0 +1,71 @@
+{
+  "account": {
+    "account_id": "U0000000",
+    "base_currency": "USD"
+  },
+  "options": [
+    {
+      "contract_id": "AAPL-20260821-C-200",
+      "underlying_symbol": "AAPL",
+      "right": "CALL",
+      "strike": 200.0,
+      "expiry_date": "2026-08-21",
+      "multiplier": "100",
+      "quantity": 2,
+      "avg_cost": 1000.0,
+      "market_price": 12.5,
+      "market_value": 2500.0,
+      "unrealized_pnl": 500.0,
+      "currency": "USD",
+      "fx_rate": 1.0,
+      "implied_volatility": 0.25,
+      "delta": 0.5,
+      "gamma": 0.03,
+      "theta": -0.14,
+      "vega": 0.4,
+      "underlying_price": 210.0
+    },
+    {
+      "contract_id": "AAPL-20260821-P-190",
+      "underlying_symbol": "AAPL",
+      "right": "PUT",
+      "strike": 190.0,
+      "expiry_date": "2026-08-21",
+      "multiplier": "100",
+      "quantity": -1,
+      "avg_cost": 900.0,
+      "market_price": 10.0,
+      "market_value": -1000.0,
+      "unrealized_pnl": -100.0,
+      "currency": "USD",
+      "fx_rate": 1.0,
+      "implied_volatility": 0.30,
+      "delta": -0.4,
+      "gamma": 0.02,
+      "theta": -0.04,
+      "vega": 0.2,
+      "underlying_price": 185.0
+    },
+    {
+      "contract_id": "MSFT-20260918-C-500",
+      "underlying_symbol": "MSFT",
+      "right": "CALL",
+      "strike": 500.0,
+      "expiry_date": "2026-09-18",
+      "multiplier": "100",
+      "quantity": 1,
+      "avg_cost": 600.0,
+      "market_price": 5.0,
+      "market_value": 500.0,
+      "unrealized_pnl": -100.0,
+      "currency": "USD",
+      "fx_rate": 1.0,
+      "implied_volatility": null,
+      "delta": null,
+      "gamma": null,
+      "theta": null,
+      "vega": null,
+      "underlying_price": null
+    }
+  ]
+}

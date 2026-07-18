@@ -1,7 +1,16 @@
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from ib_common.schema import FlexTrade, Position, Snapshot, TradeHistoryReport, TradeHistorySummary
+from ib_common.schema import (
+    FlexTrade,
+    OptionPositionView,
+    OptionsOverview,
+    OptionsOverviewSummary,
+    Position,
+    Snapshot,
+    TradeHistoryReport,
+    TradeHistorySummary,
+)
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -78,3 +87,55 @@ def test_flex_trade_exposes_original_and_base_currency_amounts():
         ),
     )
     assert report.model_dump(mode="json")["trades"][0]["base_realized_pnl"] == 150.0
+
+
+def test_option_position_view_serializes_nullable_market_data():
+    position = OptionPositionView(
+        account_id="U0000000",
+        underlying_symbol="AAPL",
+        right="CALL",
+        quantity=2,
+        strike=200.0,
+        expiry_date=date(2026, 8, 21),
+        days_to_expiry=35,
+        avg_cost=1234.0,
+        market_price=None,
+        market_value=2500.0,
+        unrealized_pnl=32.0,
+        currency="USD",
+        multiplier=100,
+        implied_volatility=None,
+        delta=None,
+        gamma=None,
+        theta=None,
+        vega=None,
+        underlying_price=None,
+        moneyness=None,
+        greeks_status="unavailable: no option market data",
+    )
+
+    assert position.position_side == "LONG"
+    assert position.market_price is None
+    assert position.model_dump(mode="json")["theta"] is None
+
+
+def test_options_overview_preserves_null_aggregate_when_uncovered():
+    response = OptionsOverview(
+        account_id="U0000000",
+        base_currency="USD",
+        options=[],
+        summary=OptionsOverviewSummary(
+            total_delta=None,
+            total_gamma=None,
+            total_theta=None,
+            total_vega=None,
+            daily_time_value_decay=None,
+            greek_coverage={},
+            expiration_distribution=[],
+            underlying_concentration=[],
+        ),
+        data_limitations=["No open option positions."],
+        ts=datetime(2026, 7, 18, tzinfo=timezone.utc),
+    )
+
+    assert response.model_dump(mode="json")["summary"]["total_delta"] is None
