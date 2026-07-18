@@ -335,6 +335,19 @@ def _model_underlying_price(ticker: object) -> float | None:
     )
 
 
+def _shared_model_underlying_price(
+    subscriptions: list[tuple[object, object]], key: tuple[str, str]
+) -> float | None:
+    """Resolve one model underlying price shared by matching option rows."""
+    for item, ticker in subscriptions:
+        contract = item.contract
+        if (contract.symbol, contract.currency) == key:
+            price = _model_underlying_price(ticker)
+            if price is not None:
+                return price
+    return None
+
+
 def _quoted_underlying_price(ticker: object) -> float | None:
     """Resolve an underlying quote from market price and then prior close."""
     market_price = _usable_underlying_price(ticker.marketPrice())
@@ -449,6 +462,11 @@ def _default_client_factory(cfg):
                     (item.contract.symbol, item.contract.currency)
                     for item, ticker in option_subscriptions
                     if _model_underlying_price(ticker) is None
+                    and _shared_model_underlying_price(
+                        option_subscriptions,
+                        (item.contract.symbol, item.contract.currency),
+                    )
+                    is None
                 }
                 underlying_contracts = {
                     key: Stock(key[0], "SMART", key[1]) for key in missing_keys
@@ -457,19 +475,19 @@ def _default_client_factory(cfg):
                     qualified_contracts = self.ib.qualifyContracts(
                         *underlying_contracts.values()
                     )
-                    for key, contract in zip(underlying_contracts, qualified_contracts):
+                    for contract in qualified_contracts:
                         if contract is None:
+                            continue
+                        key = (contract.symbol, contract.currency)
+                        if key not in missing_keys or key in underlying_subscriptions:
                             continue
                         ticker = self.ib.reqMktData(contract, "", False, False)
                         underlying_subscriptions[key] = (contract, ticker)
                 _wait_until(
                     self.ib,
                     lambda: all(
-                        all(
-                            _model_underlying_price(option_ticker) is not None
-                            for item, option_ticker in option_subscriptions
-                            if (item.contract.symbol, item.contract.currency) == key
-                        )
+                        _shared_model_underlying_price(option_subscriptions, key)
+                        is not None
                         or _quoted_underlying_price(ticker) is not None
                         for key, (_, ticker) in underlying_subscriptions.items()
                     ),
@@ -482,6 +500,10 @@ def _default_client_factory(cfg):
                     greeks = ticker.modelGreeks
                     key = (contract.symbol, contract.currency)
                     underlying_price = _model_underlying_price(ticker)
+                    if underlying_price is None:
+                        underlying_price = _shared_model_underlying_price(
+                            option_subscriptions, key
+                        )
                     if underlying_price is None and key in underlying_subscriptions:
                         underlying_price = _quoted_underlying_price(
                             underlying_subscriptions[key][1]
