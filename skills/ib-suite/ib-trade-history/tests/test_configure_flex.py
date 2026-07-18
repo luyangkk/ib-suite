@@ -51,7 +51,7 @@ def test_configure_flex_writes_token_and_windows(tmp_path):
     assert cfg.flex.token == "t"
     assert cfg.flex.query_ids == {7: "q7"}
     assert "# keep" in path.read_text(encoding="utf-8")
-    assert "t" not in str(result) or result["config"]  # result carries no secret
+    assert "q7" not in str(result)  # result carries no secret query id
 
 
 def test_configure_flex_merges_new_window_without_force(tmp_path):
@@ -122,6 +122,34 @@ def test_configure_flex_missing_config_directs_to_first_run_setup(tmp_path):
 
     with pytest.raises(FileNotFoundError, match="ib-suite first-run setup"):
         configure_flex.configure_flex(path, token="t", windows={7: "q7"})
+
+
+def test_configure_flex_keeps_original_when_staged_validation_fails(
+    tmp_path, monkeypatch
+):
+    """A failed staged reload leaves the config untouched and never echoes secrets."""
+    configure_flex = load_module()
+    path = tmp_path / "config.yaml"
+    original = "# retain\nflex:\n  token: old-token-secret\n  query_ids:\n    7: old-query-secret\n"
+    path.write_text(original, encoding="utf-8")
+
+    def fail_validation(_):
+        raise ValueError("new-token-secret new-query-secret malformed")
+
+    monkeypatch.setattr(configure_flex, "load_config", fail_validation)
+
+    with pytest.raises(ValueError) as excinfo:
+        configure_flex.configure_flex(
+            path, token="new-token-secret", windows={30: "new-query-secret"}, force=True
+        )
+
+    # (c) the raised error never leaks the token or any query-id value.
+    assert "new-token-secret" not in str(excinfo.value)
+    assert "new-query-secret" not in str(excinfo.value)
+    # (a) the real config on disk is byte-for-byte unchanged.
+    assert path.read_text(encoding="utf-8") == original
+    # (b) no temp file is left behind in the config's parent directory.
+    assert not list(tmp_path.glob(".config.yaml.*.tmp"))
 
 
 def test_cli_writes_windows_and_never_echoes_values(tmp_path):

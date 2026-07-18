@@ -112,8 +112,6 @@ def configure_flex(
                 raise ValueError("staged Flex windows did not reload exactly")
         os.replace(temporary_path, path)
         temporary_path = None
-    except FileExistsError:
-        raise
     except Exception:
         raise ValueError(_CONFIG_ERROR) from None
     finally:
