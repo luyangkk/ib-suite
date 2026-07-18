@@ -1,6 +1,6 @@
 ---
 name: ib-suite
-description: Read-only Interactive Brokers toolchain index. Use when orienting in the skills/ directory, deciding which IB skill to run (ib-gateway vs ib-portfolio-analyst) or in what order, or when integrating the toolchain from another system. Not for doing the work itself — the sub-skills own that.
+description: Read-only Interactive Brokers toolchain index and onboarding. Use when orienting across the ib-suite skills, running first-run setup (venv + live/paper config), or deciding which IB skill to run and in what order: ib-sync ingestion, live account/positions/daily-P&L/options overviews, Flex trade history, or the offline ib-analyze report. It runs nothing itself — the sub-skills do the work and never place, modify, or cancel an order.
 metadata:
   openclaw:
     always: true
