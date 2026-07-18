@@ -799,6 +799,15 @@ def test_module_never_imports_order_apis():
         assert forbidden not in SPEC.read_text()
 
 
+def test_skill_instructs_grouped_moneyness_presentation():
+    skill = (SPEC.parent.parent / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "group positions by `moneyness`" in skill
+    assert "ITM, ATM, OTM, and UNKNOWN" in skill
+    assert "absolute difference between `underlying_price` and `strike`" in skill
+    assert "user's language" in skill
+
+
 def test_base_currency_falls_back_to_net_liquidation_currency():
     """IB accounts without a Currency tag use NetLiquidation's quote currency."""
     values = [
