@@ -189,6 +189,56 @@ def test_nan_option_market_price_stays_null_with_limitation():
     assert position.market_price is None
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (210.5, 210.5),
+        ("210.5", 210.5),
+        (None, None),
+        (math.nan, None),
+        (math.inf, None),
+        (0.0, None),
+        (-1.0, None),
+    ],
+)
+def test_usable_underlying_price_rejects_ib_sentinels(value, expected):
+    assert options_overview._usable_underlying_price(value) == expected
+
+
+def test_wait_until_stops_as_soon_as_data_is_ready():
+    class FakeIB:
+        elapsed = 0.0
+
+        def sleep(self, seconds):
+            self.elapsed += seconds
+
+    ib = FakeIB()
+    options_overview._wait_until(
+        ib,
+        lambda: ib.elapsed >= 0.5,
+        timeout_s=20.0,
+        poll_s=0.25,
+    )
+    assert ib.elapsed == 0.5
+
+
+def test_wait_until_stops_at_timeout_when_data_never_arrives():
+    class FakeIB:
+        elapsed = 0.0
+
+        def sleep(self, seconds):
+            self.elapsed += seconds
+
+    ib = FakeIB()
+    options_overview._wait_until(
+        ib,
+        lambda: False,
+        timeout_s=20.0,
+        poll_s=0.25,
+    )
+    assert ib.elapsed == 20.0
+
+
 def test_orchestration_uses_injected_client_and_disconnects(tmp_path):
     """The Gateway orchestration emits JSON-safe data and closes its client."""
     class FakeClient:
@@ -337,7 +387,19 @@ def test_live_client_collects_option_greeks_and_cancels_market_data(
             """Record connection cleanup."""
             self.disconnected = True
 
-    monkeypatch.setitem(sys.modules, "ib_async", SimpleNamespace(IB=FakeIB))
+    class FakeStock:
+        """Record any unexpected fallback underlying contract construction."""
+
+        constructed = []
+
+        def __init__(self, symbol, exchange, currency):
+            FakeStock.constructed.append((symbol, exchange, currency))
+
+    monkeypatch.setitem(
+        sys.modules,
+        "ib_async",
+        SimpleNamespace(IB=FakeIB, Stock=FakeStock),
+    )
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text("connection:\n  market_data_type: delayed\n")
 
@@ -350,6 +412,7 @@ def test_live_client_collects_option_greeks_and_cancels_market_data(
     assert fake.market_data_types == [3]
     assert fake.cancelled == [contract]
     assert fake.disconnected is True
+    assert FakeStock.constructed == []
     assert raw["options"] == [
         {
             "contract_id": "AAPL-20260821-C-200",
@@ -373,6 +436,337 @@ def test_live_client_collects_option_greeks_and_cancels_market_data(
             "underlying_price": 210.0,
         }
     ]
+
+
+def test_live_client_uses_one_underlying_quote_for_missing_model_prices(
+    monkeypatch, tmp_path
+):
+    """One qualified stock quote supplies every matching option row."""
+    option_contracts = [
+        SimpleNamespace(
+            conId=index,
+            symbol="AAPL",
+            secType="OPT",
+            currency="USD",
+            lastTradeDateOrContractMonth="20260821",
+            right="C",
+            strike=strike,
+            multiplier="100",
+        )
+        for index, strike in ((1, 200.0), (2, 205.0))
+    ]
+    option_tickers = {
+        contract.conId: SimpleNamespace(
+            modelGreeks=None,
+            marketPrice=lambda: 12.5,
+        )
+        for contract in option_contracts
+    }
+
+    class FakeStock:
+        """Build a simple underlying contract with inspection-friendly fields."""
+
+        constructed = []
+
+        def __init__(self, symbol, exchange, currency):
+            self.symbol = symbol
+            self.exchange = exchange
+            self.currency = currency
+            self.secType = "STK"
+            FakeStock.constructed.append(self)
+
+    class FakeIB:
+        """Populate the underlying ticker after the first two polling steps."""
+
+        instance = None
+
+        def __init__(self):
+            FakeIB.instance = self
+            self.cancelled = []
+            self.qualified = []
+            self.underlying_ticker = SimpleNamespace(
+                close=None,
+                marketPrice=lambda: math.nan,
+            )
+            self.underlying_subscribed = False
+            self.underlying_elapsed = 0.0
+
+        def connect(self, *args, **kwargs):
+            pass
+
+        def reqMarketDataType(self, market_data_type):
+            pass
+
+        def managedAccounts(self):
+            return ["U0000000"]
+
+        def accountValues(self, account_id=None):
+            return [
+                SimpleNamespace(tag="Currency", value="USD", currency="BASE"),
+                SimpleNamespace(
+                    tag="$LEDGER-ExchangeRate", value="1.0", currency="USD"
+                ),
+            ]
+
+        def portfolio(self, account_id):
+            return [
+                SimpleNamespace(
+                    contract=contract,
+                    position=1,
+                    averageCost=1000.0,
+                    marketValue=2500.0,
+                    unrealizedPNL=500.0,
+                )
+                for contract in option_contracts
+            ]
+
+        def qualifyContracts(self, *contracts):
+            self.qualified.extend(contracts)
+            return list(contracts)
+
+        def reqMktData(self, contract, generic_tick_list, snapshot, regulatory_snapshot):
+            if contract.secType == "OPT":
+                return option_tickers[contract.conId]
+            self.underlying_subscribed = True
+            return self.underlying_ticker
+
+        def sleep(self, seconds):
+            if self.underlying_subscribed:
+                self.underlying_elapsed += seconds
+                if self.underlying_elapsed >= 0.5:
+                    self.underlying_ticker.marketPrice = lambda: 210.0
+
+        def cancelMktData(self, contract):
+            self.cancelled.append(contract)
+
+        def disconnect(self):
+            pass
+
+    monkeypatch.setitem(
+        sys.modules,
+        "ib_async",
+        SimpleNamespace(IB=FakeIB, Stock=FakeStock),
+    )
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("connection:\n  market_data_type: delayed\n")
+
+    raw = options_overview._default_client_factory(load_config(cfg_path)).fetch_raw()
+
+    fake = FakeIB.instance
+    assert [(stock.symbol, stock.exchange, stock.currency) for stock in FakeStock.constructed] == [
+        ("AAPL", "SMART", "USD")
+    ]
+    assert fake.qualified == FakeStock.constructed
+    assert [row["underlying_price"] for row in raw["options"]] == [210.0, 210.0]
+    assert {id(contract) for contract in fake.cancelled} == {
+        id(contract) for contract in [*option_contracts, FakeStock.constructed[0]]
+    }
+    overview = options_overview.build_options_overview(raw, REPORT_DATE, TS)
+    assert [row.moneyness for row in overview.options] == ["ITM", "ITM"]
+
+
+def test_quoted_underlying_price_prefers_market_price_and_then_close():
+    """A valid quote wins; an IB NaN sentinel falls back to the prior close."""
+    ticker = SimpleNamespace(close=205.0, marketPrice=lambda: 210.0)
+    assert options_overview._quoted_underlying_price(ticker) == 210.0
+
+    ticker.marketPrice = lambda: math.nan
+    assert options_overview._quoted_underlying_price(ticker) == 205.0
+
+
+def test_live_client_keeps_only_unavailable_fallback_as_null(monkeypatch, tmp_path):
+    """A failed quote for one underlying does not erase another underlying quote."""
+    option_contracts = [
+        SimpleNamespace(
+            conId=index,
+            symbol=symbol,
+            secType="OPT",
+            currency="USD",
+            lastTradeDateOrContractMonth="20260821",
+            right="C",
+            strike=200.0,
+            multiplier="100",
+        )
+        for index, symbol in ((1, "AAPL"), (2, "MSFT"))
+    ]
+
+    class FakeStock:
+        """Build a stock contract directly from the requested underlying key."""
+
+        constructed = []
+
+        def __init__(self, symbol, exchange, currency):
+            self.symbol = symbol
+            self.exchange = exchange
+            self.currency = currency
+            self.secType = "STK"
+            FakeStock.constructed.append(self)
+
+    class FakeIB:
+        """Return a quote only for AAPL while allowing the timeout to elapse."""
+
+        instance = None
+
+        def __init__(self):
+            FakeIB.instance = self
+            self.cancelled = []
+
+        def connect(self, *args, **kwargs):
+            pass
+
+        def reqMarketDataType(self, market_data_type):
+            pass
+
+        def managedAccounts(self):
+            return ["U0000000"]
+
+        def accountValues(self, account_id=None):
+            return [SimpleNamespace(tag="Currency", value="USD", currency="BASE")]
+
+        def portfolio(self, account_id):
+            return [
+                SimpleNamespace(
+                    contract=contract,
+                    position=1,
+                    averageCost=1000.0,
+                    marketValue=2500.0,
+                    unrealizedPNL=500.0,
+                )
+                for contract in option_contracts
+            ]
+
+        def qualifyContracts(self, *contracts):
+            return list(contracts)
+
+        def reqMktData(self, contract, generic_tick_list, snapshot, regulatory_snapshot):
+            if contract.secType == "OPT":
+                return SimpleNamespace(modelGreeks=None, marketPrice=lambda: 12.5)
+            return SimpleNamespace(
+                close=None,
+                marketPrice=(lambda: 210.0) if contract.symbol == "AAPL" else (lambda: math.nan),
+            )
+
+        def sleep(self, seconds):
+            pass
+
+        def cancelMktData(self, contract):
+            self.cancelled.append(contract)
+
+        def disconnect(self):
+            pass
+
+    monkeypatch.setitem(
+        sys.modules,
+        "ib_async",
+        SimpleNamespace(IB=FakeIB, Stock=FakeStock),
+    )
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("connection:\n  market_data_type: delayed\n")
+
+    raw = options_overview._default_client_factory(load_config(cfg_path)).fetch_raw()
+
+    assert [row["underlying_price"] for row in raw["options"]] == [210.0, None]
+
+
+def test_live_client_cancels_partial_underlying_subscriptions_on_error(
+    monkeypatch, tmp_path
+):
+    """Cleanup closes options and any already-opened underlying subscriptions."""
+    option_contracts = [
+        SimpleNamespace(
+            conId=index,
+            symbol=symbol,
+            secType="OPT",
+            currency="USD",
+            lastTradeDateOrContractMonth="20260821",
+            right="C",
+            strike=200.0,
+            multiplier="100",
+        )
+        for index, symbol in ((1, "AAPL"), (2, "MSFT"))
+    ]
+
+    class FakeStock:
+        """Build a stock contract directly from the requested underlying key."""
+
+        constructed = []
+
+        def __init__(self, symbol, exchange, currency):
+            self.symbol = symbol
+            self.exchange = exchange
+            self.currency = currency
+            self.secType = "STK"
+            FakeStock.constructed.append(self)
+
+    class FakeIB:
+        """Raise during the second underlying subscription after opening the first."""
+
+        instance = None
+
+        def __init__(self):
+            FakeIB.instance = self
+            self.cancelled = []
+            self.underlying_requests = 0
+
+        def connect(self, *args, **kwargs):
+            pass
+
+        def reqMarketDataType(self, market_data_type):
+            pass
+
+        def managedAccounts(self):
+            return ["U0000000"]
+
+        def accountValues(self, account_id=None):
+            return [SimpleNamespace(tag="Currency", value="USD", currency="BASE")]
+
+        def portfolio(self, account_id):
+            return [
+                SimpleNamespace(
+                    contract=contract,
+                    position=1,
+                    averageCost=1000.0,
+                    marketValue=2500.0,
+                    unrealizedPNL=500.0,
+                )
+                for contract in option_contracts
+            ]
+
+        def qualifyContracts(self, *contracts):
+            return list(contracts)
+
+        def reqMktData(self, contract, generic_tick_list, snapshot, regulatory_snapshot):
+            if contract.secType == "OPT":
+                return SimpleNamespace(modelGreeks=None, marketPrice=lambda: 12.5)
+            self.underlying_requests += 1
+            if self.underlying_requests == 2:
+                raise RuntimeError("underlying quote unavailable")
+            return SimpleNamespace(close=210.0, marketPrice=lambda: math.nan)
+
+        def sleep(self, seconds):
+            pass
+
+        def cancelMktData(self, contract):
+            self.cancelled.append(contract)
+
+        def disconnect(self):
+            pass
+
+    monkeypatch.setitem(
+        sys.modules,
+        "ib_async",
+        SimpleNamespace(IB=FakeIB, Stock=FakeStock),
+    )
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("connection:\n  market_data_type: delayed\n")
+
+    with pytest.raises(RuntimeError, match="underlying quote unavailable"):
+        options_overview._default_client_factory(load_config(cfg_path)).fetch_raw()
+
+    fake = FakeIB.instance
+    assert {id(contract) for contract in fake.cancelled} == {
+        id(contract) for contract in [*option_contracts, FakeStock.constructed[0]]
+    }
 
 
 def test_module_never_imports_order_apis():

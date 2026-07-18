@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import date, datetime, timezone
 import json
 import math
@@ -317,6 +318,43 @@ def _market_data_type_code(mode: str) -> int:
         ) from error
 
 
+def _usable_underlying_price(value: object) -> float | None:
+    """Return a positive finite underlying price or null for IB sentinels."""
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    return price if math.isfinite(price) and price > 0 else None
+
+
+def _model_underlying_price(ticker: object) -> float | None:
+    """Read the preferred underlying price from an option model payload."""
+    greeks = getattr(ticker, "modelGreeks", None)
+    return _usable_underlying_price(
+        getattr(greeks, "undPrice", None) if greeks is not None else None
+    )
+
+
+def _quoted_underlying_price(ticker: object) -> float | None:
+    """Resolve an underlying quote from market price and then prior close."""
+    market_price = _usable_underlying_price(ticker.marketPrice())
+    return market_price or _usable_underlying_price(getattr(ticker, "close", None))
+
+
+def _wait_until(
+    ib: object,
+    predicate: Callable[[], bool],
+    timeout_s: float,
+    poll_s: float = 0.25,
+) -> None:
+    """Let IB process events until data is ready or the bounded wait expires."""
+    elapsed = 0.0
+    while not predicate() and elapsed < timeout_s:
+        interval = min(poll_s, timeout_s - elapsed)
+        ib.sleep(interval)
+        elapsed += interval
+
+
 def _exchange_rates(account_values) -> dict[str, float]:
     """Collect local-to-base exchange rates from IB ledger rows."""
     rates: dict[str, float] = {}
@@ -360,7 +398,7 @@ def _contract_id(contract) -> str:
 
 def _default_client_factory(cfg):
     """Build a read-only IB Gateway client, imported lazily for offline tests."""
-    from ib_async import IB
+    from ib_async import IB, Stock
 
     class _LiveClient:
         """Read the account option book and its model Greeks from IB Gateway."""
@@ -392,18 +430,60 @@ def _default_client_factory(cfg):
                 for item in self.ib.portfolio(account_id)
                 if item.contract.secType == "OPT"
             ]
-            subscriptions: list[tuple[object, object]] = []
+            option_subscriptions: list[tuple[object, object]] = []
+            underlying_subscriptions: dict[tuple[str, str], tuple[object, object]] = {}
             try:
                 for item in positions:
                     contract = item.contract
                     ticker = self.ib.reqMktData(contract, "", False, False)
-                    subscriptions.append((item, ticker))
-                self.ib.sleep(4.0)
+                    option_subscriptions.append((item, ticker))
+                _wait_until(
+                    self.ib,
+                    lambda: all(
+                        _model_underlying_price(ticker) is not None
+                        for _, ticker in option_subscriptions
+                    ),
+                    timeout_s=4.0,
+                )
+                missing_keys = {
+                    (item.contract.symbol, item.contract.currency)
+                    for item, ticker in option_subscriptions
+                    if _model_underlying_price(ticker) is None
+                }
+                underlying_contracts = [
+                    Stock(symbol, "SMART", currency)
+                    for symbol, currency in missing_keys
+                ]
+                if underlying_contracts:
+                    for contract in self.ib.qualifyContracts(*underlying_contracts):
+                        ticker = self.ib.reqMktData(contract, "", False, False)
+                        underlying_subscriptions[
+                            (contract.symbol, contract.currency)
+                        ] = (contract, ticker)
+                _wait_until(
+                    self.ib,
+                    lambda: all(
+                        any(
+                            _model_underlying_price(option_ticker) is not None
+                            for item, option_ticker in option_subscriptions
+                            if (item.contract.symbol, item.contract.currency) == key
+                        )
+                        or _quoted_underlying_price(ticker) is not None
+                        for key, (_, ticker) in underlying_subscriptions.items()
+                    ),
+                    timeout_s=20.0,
+                )
 
                 options: list[dict] = []
-                for item, ticker in subscriptions:
+                for item, ticker in option_subscriptions:
                     contract = item.contract
                     greeks = ticker.modelGreeks
+                    key = (contract.symbol, contract.currency)
+                    underlying_price = _model_underlying_price(ticker)
+                    if underlying_price is None and key in underlying_subscriptions:
+                        underlying_price = _quoted_underlying_price(
+                            underlying_subscriptions[key][1]
+                        )
                     options.append(
                         {
                             "contract_id": _contract_id(contract),
@@ -428,14 +508,14 @@ def _default_client_factory(cfg):
                             "gamma": greeks.gamma if greeks is not None else None,
                             "theta": greeks.theta if greeks is not None else None,
                             "vega": greeks.vega if greeks is not None else None,
-                            "underlying_price": (
-                                greeks.undPrice if greeks is not None else None
-                            ),
+                            "underlying_price": underlying_price,
                         }
                     )
             finally:
-                for item, _ in subscriptions:
+                for item, _ in option_subscriptions:
                     self.ib.cancelMktData(item.contract)
+                for contract, _ in underlying_subscriptions.values():
+                    self.ib.cancelMktData(contract)
 
             return {
                 "account": {
