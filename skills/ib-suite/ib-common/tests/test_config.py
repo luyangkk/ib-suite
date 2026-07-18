@@ -1,7 +1,9 @@
 # skills/ib-common/tests/test_config.py
+from datetime import date
 from pathlib import Path
 import pytest
 from ib_common.config import load_config, resolve_base_currency
+from ib_common.schema import TradeHistoryReport, TradeHistorySummary
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -68,3 +70,23 @@ def test_options_market_data_can_be_enabled():
     """Explicit true opts into Greeks/IV subscription (may incur snapshot fees)."""
     cfg = load_config(FIX / "config_options_market_data.yaml")
     assert cfg.options.fetch_market_data is True
+
+
+def _empty_summary() -> TradeHistorySummary:
+    return TradeHistorySummary(
+        total_trades=0, buy_count=0, sell_count=0,
+        total_notional=0.0, total_commission=0.0,
+        profitable_trades=0, losing_trades=0,
+        win_rate=None, average_profit=None, average_loss=None,
+        profit_loss_ratio=None,
+    )
+
+
+def test_report_coverage_note_defaults_to_null():
+    """A report without coverage gaps serializes coverage_note as null."""
+    report = TradeHistoryReport(
+        start_date=date(2026, 7, 1), end_date=date(2026, 7, 7),
+        base_currency="USD", trades=[], summary=_empty_summary(),
+    )
+    assert report.coverage_note is None
+    assert report.model_dump(mode="json")["coverage_note"] is None

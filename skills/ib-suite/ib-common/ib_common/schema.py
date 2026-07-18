@@ -140,6 +140,7 @@ class TradeHistoryReport(BaseModel):
     base_currency: str
     trades: list[FlexTrade]
     summary: TradeHistorySummary
+    coverage_note: str | None = None
 
 
 class DailyBar(BaseModel):
