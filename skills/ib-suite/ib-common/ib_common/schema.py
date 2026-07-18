@@ -6,7 +6,7 @@ only on these types, never on raw ib_async objects.
 """
 from __future__ import annotations
 from datetime import date, datetime
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, Field, computed_field
 
 
 class Account(BaseModel):
@@ -276,6 +276,89 @@ class DailyPnLOverview(BaseModel):
     unrealized_pnl: float
     realized_pnl: float
     positions: list[DailyPnLPosition]
+    ts: datetime
+
+
+class OptionPositionView(BaseModel):
+    """One live option holding with IB valuation and model-Greeks fields."""
+
+    account_id: str
+    underlying_symbol: str
+    right: str
+    quantity: float
+    strike: float
+    expiry_date: date
+    days_to_expiry: int
+    avg_cost: float
+    market_price: float
+    market_value: float
+    unrealized_pnl: float
+    currency: str
+    multiplier: int
+    implied_volatility: float | None = None
+    delta: float | None = None
+    gamma: float | None = None
+    theta: float | None = None
+    vega: float | None = None
+    underlying_price: float | None = None
+    moneyness: str | None = None
+    greeks_status: str
+    fx_rate: float | None = None
+    base_market_value: float | None = None
+    base_unrealized_pnl: float | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def position_side(self) -> str:
+        """Return the direction represented by the signed holding quantity."""
+        return "LONG" if self.quantity > 0 else "SHORT" if self.quantity < 0 else "FLAT"
+
+
+class OptionGreekCoverage(BaseModel):
+    """Coverage metadata for one account-level Greek."""
+
+    contributing_contracts: int
+    excluded_contracts: list[str] = Field(default_factory=list)
+
+
+class OptionExpirationBucket(BaseModel):
+    """Absolute option exposure and signed quantity for one expiry."""
+
+    expiry_date: date
+    contract_count: int
+    quantity: float
+    absolute_base_market_value: float | None = None
+
+
+class OptionUnderlyingConcentration(BaseModel):
+    """Absolute option-market-value concentration for one underlying."""
+
+    underlying_symbol: str
+    absolute_base_market_value: float | None = None
+    weight: float | None = None
+
+
+class OptionsOverviewSummary(BaseModel):
+    """Aggregate option Greeks and deterministic risk distributions."""
+
+    total_delta: float | None = None
+    total_gamma: float | None = None
+    total_theta: float | None = None
+    total_vega: float | None = None
+    daily_time_value_decay: float | None = None
+    greek_coverage: dict[str, OptionGreekCoverage] = Field(default_factory=dict)
+    expiration_distribution: list[OptionExpirationBucket] = Field(default_factory=list)
+    underlying_concentration: list[OptionUnderlyingConcentration] = Field(default_factory=list)
+
+
+class OptionsOverview(BaseModel):
+    """Read-only option holdings and aggregate risk overview."""
+
+    account_id: str
+    base_currency: str
+    options: list[OptionPositionView]
+    summary: OptionsOverviewSummary
+    data_limitations: list[str]
     ts: datetime
 
 
