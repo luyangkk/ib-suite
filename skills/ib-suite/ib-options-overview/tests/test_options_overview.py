@@ -6,6 +6,7 @@ import importlib.util
 import json
 import math
 from pathlib import Path
+import re
 from types import SimpleNamespace
 import sys
 
@@ -1137,13 +1138,33 @@ def test_module_never_imports_order_apis():
         assert forbidden not in SPEC.read_text()
 
 
-def test_skill_instructs_grouped_moneyness_presentation():
+def test_skill_instructs_two_table_localized_presentation():
     skill = (SPEC.parent.parent / "SKILL.md").read_text(encoding="utf-8")
 
-    assert "group positions by `moneyness`" in skill
+    detail_anchor = "Start with a position-detail Markdown table"
+    moneyness_anchor = "In the second table, group positions by `moneyness`"
+    assert skill.index(detail_anchor) < skill.index(moneyness_anchor)
+    for field in (
+        "underlying_symbol",
+        "right",
+        "expiry_date",
+        "days_to_expiry",
+        "strike",
+        "quantity",
+        "market_value",
+        "unrealized_pnl",
+    ):
+        assert f"`{field}`" in skill
+    assert "language of the user's current request" in skill
+    assert "expiry_date`, then `underlying_symbol`, then `strike`" in skill
+    assert "two decimal places with an explicit plus sign for positive values" in skill
+    assert "without unnecessary trailing zeros" in skill
+    assert "two most negative" in skill
+    assert "never bold zero or profitable values" in skill
     assert "ITM, ATM, OTM, and UNKNOWN" in skill
     assert "absolute difference between `underlying_price` and `strike`" in skill
-    assert "user's language" in skill
+    assert "account overview, principal risk observations, and data limitations" in skill
+    assert re.search(r"[\u4e00-\u9fff]", skill) is None
 
 
 def test_base_currency_falls_back_to_net_liquidation_currency():

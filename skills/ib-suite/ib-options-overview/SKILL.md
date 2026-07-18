@@ -27,13 +27,28 @@ P&L, IV, Delta, Gamma, Theta, Vega, and ITM/ATM/OTM state. `summary` includes
 aggregate Greeks, daily time-value decay, expiry distribution, and absolute
 market-value underlying concentration.
 
-Present the result in the user's language. Start with a compact Markdown table
-and group positions by `moneyness` in this order: ITM, ATM, OTM, and UNKNOWN.
-For a classified position with an underlying price, show the underlying price
-and the in/out-of-the-money distance as the absolute difference between `underlying_price` and `strike`.
+Present the result in the language of the user's current request. Start with a position-detail Markdown table,
+then a moneyness Markdown table, and only then the account overview, principal risk observations, and data limitations.
+
+The position-detail table must contain these columns in order:
+`underlying_symbol`, `right`, `expiry_date`, `days_to_expiry`, `strike`,
+`quantity`, `market_value`, and `unrealized_pnl`. Localize the table title,
+headings, Call/Put labels, and surrounding prose; keep ticker symbols, dates,
+DTE values, currency values, and ITM/ATM/OTM/UNKNOWN unchanged. Sort rows by
+`expiry_date`, then `underlying_symbol`, then `strike`, all ascending. Render
+strikes compactly without unnecessary trailing zeros. Render market value and
+unrealized P&L to two decimal places with an explicit plus sign for positive values.
+Bold the `unrealized_pnl` cells for the two largest available losses (the two most negative values);
+if fewer than two losses exist, bold only those, and never bold zero or profitable values.
+
+In the second table, group positions by `moneyness` in this order: ITM, ATM, OTM, and UNKNOWN,
+including empty groups. Within each group, sort by
+`underlying_symbol`, then `expiry_date`, then `strike`. For a classified
+position with an underlying price, show the underlying price and the in/out-of-
+the-money distance as the absolute difference between `underlying_price` and `strike`.
 You may combine strikes only when symbol, right, expiry, and moneyness are
 identical. Put positions with null moneyness in UNKNOWN and explain their
-matching `data_limitations` below the table.
+matching `data_limitations` after the tables.
 
 Delayed data is accepted. Unavailable price, underlying price, IV, or Greek
 fields remain `null` and are explained in `data_limitations`; no unavailable
