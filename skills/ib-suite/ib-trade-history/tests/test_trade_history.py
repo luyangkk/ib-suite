@@ -19,27 +19,23 @@ trade_history = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(trade_history)
 
 
-def test_config_credentials_override_complete_environment_pair(tmp_path):
-    """A complete local Flex pair takes precedence over shell credentials."""
+def test_resolve_flex_token_reads_config(tmp_path):
+    """The Flex token is read solely from local configuration."""
     config = tmp_path / "config.yaml"
     config.write_text(
-        "data:\n  base_currency: USD\nflex:\n  token: config-token\n  query_id: config-query\n",
+        "data:\n  base_currency: USD\nflex:\n  token: config-token\n"
+        "  query_ids:\n    7: q7\n",
         encoding="utf-8",
     )
-
-    assert trade_history.resolve_flex_credentials(
-        load_config(config),
-        {"FLEX_TOKEN": "env-token", "FLEX_QUERY_ID": "env-query"},
-    ) == ("config-token", "config-query")
+    assert trade_history.resolve_flex_token(load_config(config)) == "config-token"
 
 
-def test_partial_config_credentials_are_rejected(tmp_path):
-    """A Flex credential pair must come wholly from local configuration."""
+def test_resolve_flex_token_missing_is_actionable(tmp_path):
+    """A missing token points the operator at configure_flex.py."""
     config = tmp_path / "config.yaml"
-    config.write_text("flex:\n  token: only-token\n  query_id: null\n", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="config.flex"):
-        trade_history.resolve_flex_credentials(load_config(config), {})
+    config.write_text("flex:\n  query_ids:\n    7: q7\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Flex token"):
+        trade_history.resolve_flex_token(load_config(config))
 
 
 def test_build_report_filters_inclusively_and_aggregates_base_currency():
@@ -143,7 +139,11 @@ def test_orchestration_uses_injected_flex_fetcher_and_default_period(tmp_path):
     """The executable fetches once, defaults to seven days, and emits JSON-safe data."""
     xml = (Path(__file__).parent / "fixtures" / "flex_trade_history_sample.xml").read_text()
     config = tmp_path / "config.yaml"
-    config.write_text("data:\n  base_currency: USD\n", encoding="utf-8")
+    config.write_text(
+        "data:\n  base_currency: USD\nflex:\n  token: test-token\n"
+        "  query_ids:\n    7: test-query\n",
+        encoding="utf-8",
+    )
     calls = []
 
     def fake_fetch(token: str, query_id: str) -> str:
@@ -156,13 +156,50 @@ def test_orchestration_uses_injected_flex_fetcher_and_default_period(tmp_path):
         None,
         fetcher=fake_fetch,
         today=date(2026, 7, 11),
-        environ={"FLEX_TOKEN": "test-token", "FLEX_QUERY_ID": "test-query"},
     )
 
     assert calls == [("test-token", "test-query")]
     assert out["start_date"] == "2026-07-05"
     assert out["end_date"] == "2026-07-11"
     assert [row["exec_id"] for row in out["trades"]] == ["B1", "S1", "S2", "OLD1"]
+
+
+def test_orchestration_selects_window_query_id_and_clips(tmp_path):
+    """Orchestration fetches with the selected window's query_id then clips."""
+    xml = (Path(__file__).parent / "fixtures" / "flex_trade_history_sample.xml").read_text()
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "data:\n  base_currency: USD\nflex:\n  token: t\n"
+        "  query_ids:\n    7: q7\n    30: q30\n",
+        encoding="utf-8",
+    )
+    calls = []
+
+    def fake_fetch(token: str, query_id: str) -> str:
+        calls.append((token, query_id))
+        return xml
+
+    out = trade_history.trade_history(
+        str(config), None, None, fetcher=fake_fetch, today=date(2026, 7, 11)
+    )
+    assert calls == [("t", "q7")]
+    assert out["start_date"] == "2026-07-05"
+    assert out["coverage_note"] is None
+
+
+def test_orchestration_flags_coverage_gap(tmp_path):
+    """A request beyond the largest window surfaces a coverage note."""
+    xml = (Path(__file__).parent / "fixtures" / "flex_trade_history_sample.xml").read_text()
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "data:\n  base_currency: USD\nflex:\n  token: t\n  query_ids:\n    7: q7\n",
+        encoding="utf-8",
+    )
+    out = trade_history.trade_history(
+        str(config), "2026-01-01", "2026-07-11",
+        fetcher=lambda *_: xml, today=date(2026, 7, 11),
+    )
+    assert out["coverage_note"] is not None
 
 
 def test_orchestration_requires_base_currency_and_flex_environment(tmp_path):
@@ -176,17 +213,15 @@ def test_orchestration_requires_base_currency_and_flex_environment(tmp_path):
             "2026-07-09",
             "2026-07-11",
             fetcher=lambda *_: "<FlexQueryResponse/>",
-            environ={"FLEX_TOKEN": "x", "FLEX_QUERY_ID": "y"},
         )
 
     config.write_text("data:\n  base_currency: USD\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="Flex credentials are not configured"):
+    with pytest.raises(ValueError, match="Flex token"):
         trade_history.trade_history(
             str(config),
             "2026-07-09",
             "2026-07-11",
             fetcher=lambda *_: "<FlexQueryResponse/>",
-            environ={},
         )
 
 
@@ -228,9 +263,13 @@ def test_skill_guides_safe_partial_flex_credential_recovery():
 
 def test_orchestration_redacts_request_exception_secrets(tmp_path):
     """Request failure tracebacks never expose Flex credentials or response text."""
-    config = tmp_path / "config.yaml"
-    config.write_text("data:\n  base_currency: USD\n", encoding="utf-8")
     token, query_id = "test-token", "test-query"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"data:\n  base_currency: USD\nflex:\n  token: {token}\n"
+        f"  query_ids:\n    7: {query_id}\n",
+        encoding="utf-8",
+    )
     url = f"https://example/?t={token}&q={query_id}&body=secret-body"
 
     def failed_fetch(_: str, __: str) -> str:
@@ -242,7 +281,6 @@ def test_orchestration_redacts_request_exception_secrets(tmp_path):
             "2026-07-09",
             "2026-07-11",
             fetcher=failed_fetch,
-            environ={"FLEX_TOKEN": token, "FLEX_QUERY_ID": query_id},
         )
 
     message = str(excinfo.value)
@@ -260,7 +298,10 @@ def test_orchestration_redacts_request_exception_secrets(tmp_path):
 def test_orchestration_redacts_parse_error_from_flex_fetcher(tmp_path):
     """Malformed Flex handshake XML is mapped without exposing parser details."""
     config = tmp_path / "config.yaml"
-    config.write_text("data:\n  base_currency: USD\n", encoding="utf-8")
+    config.write_text(
+        "data:\n  base_currency: USD\nflex:\n  token: x\n  query_ids:\n    7: y\n",
+        encoding="utf-8",
+    )
 
     def failed_fetch(_: str, __: str) -> str:
         raise ET.ParseError("malformed handshake response")
@@ -271,7 +312,6 @@ def test_orchestration_redacts_parse_error_from_flex_fetcher(tmp_path):
             "2026-07-09",
             "2026-07-11",
             fetcher=failed_fetch,
-            environ={"FLEX_TOKEN": "x", "FLEX_QUERY_ID": "y"},
         )
 
     assert "Flex report retrieval failed" in str(excinfo.value)
@@ -280,9 +320,13 @@ def test_orchestration_redacts_parse_error_from_flex_fetcher(tmp_path):
 
 def test_orchestration_redacts_value_error_from_flex_fetcher(tmp_path):
     """Fetcher ValueErrors cannot expose Flex URLs or credentials."""
-    config = tmp_path / "config.yaml"
-    config.write_text("data:\n  base_currency: USD\n", encoding="utf-8")
     token, query_id = "value-token", "value-query"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"data:\n  base_currency: USD\nflex:\n  token: {token}\n"
+        f"  query_ids:\n    7: {query_id}\n",
+        encoding="utf-8",
+    )
     url = f"https://example.test/?t={token}&q={query_id}&body=secret-body"
 
     def failed_fetch(_: str, __: str) -> str:
@@ -294,7 +338,6 @@ def test_orchestration_redacts_value_error_from_flex_fetcher(tmp_path):
             "2026-07-09",
             "2026-07-11",
             fetcher=failed_fetch,
-            environ={"FLEX_TOKEN": token, "FLEX_QUERY_ID": query_id},
         )
 
     message = str(excinfo.value)
@@ -311,7 +354,10 @@ def test_orchestration_redacts_value_error_from_flex_fetcher(tmp_path):
 def test_orchestration_preserves_actionable_parser_value_error(tmp_path):
     """Required Flex fields still identify the query setting that must be fixed."""
     config = tmp_path / "config.yaml"
-    config.write_text("data:\n  base_currency: USD\n", encoding="utf-8")
+    config.write_text(
+        "data:\n  base_currency: USD\nflex:\n  token: x\n  query_ids:\n    7: y\n",
+        encoding="utf-8",
+    )
 
     with pytest.raises(ValueError, match="tradeID.*Flex Query Trades"):
         trade_history.trade_history(
@@ -319,14 +365,16 @@ def test_orchestration_preserves_actionable_parser_value_error(tmp_path):
             "2026-07-09",
             "2026-07-11",
             fetcher=lambda *_: "<FlexQueryResponse><Trade/></FlexQueryResponse>",
-            environ={"FLEX_TOKEN": "x", "FLEX_QUERY_ID": "y"},
         )
 
 
 def test_orchestration_rejects_invalid_flex_xml_without_parser_details(tmp_path):
     """Malformed Flex output receives a safe, actionable public error."""
     config = tmp_path / "config.yaml"
-    config.write_text("data:\n  base_currency: USD\n", encoding="utf-8")
+    config.write_text(
+        "data:\n  base_currency: USD\nflex:\n  token: x\n  query_ids:\n    7: y\n",
+        encoding="utf-8",
+    )
 
     with pytest.raises(RuntimeError) as excinfo:
         trade_history.trade_history(
@@ -334,7 +382,6 @@ def test_orchestration_rejects_invalid_flex_xml_without_parser_details(tmp_path)
             "2026-07-09",
             "2026-07-11",
             fetcher=lambda *_: "<html>service failure",
-            environ={"FLEX_TOKEN": "x", "FLEX_QUERY_ID": "y"},
         )
 
     assert str(excinfo.value) == (
@@ -358,9 +405,13 @@ def test_main_prints_one_json_line_on_success(monkeypatch, capsys):
 
 def test_main_redacts_request_exception_secrets(monkeypatch, capsys, tmp_path):
     """The CLI displays only the safe request-failure message."""
-    config = tmp_path / "config.yaml"
-    config.write_text("data:\n  base_currency: USD\n", encoding="utf-8")
     token, query_id = "cli-token-for-redaction", "cli-query-for-redaction"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"data:\n  base_currency: USD\nflex:\n  token: {token}\n"
+        f"  query_ids:\n    7: {query_id}\n",
+        encoding="utf-8",
+    )
 
     def failed_fetch(_: str, __: str) -> str:
         raise requests.RequestException(
@@ -368,10 +419,8 @@ def test_main_redacts_request_exception_secrets(monkeypatch, capsys, tmp_path):
         )
 
     monkeypatch.setattr(
-        trade_history.trade_history, "__defaults__", (failed_fetch, None, None)
+        trade_history.trade_history, "__defaults__", (failed_fetch, None)
     )
-    monkeypatch.setenv("FLEX_TOKEN", token)
-    monkeypatch.setenv("FLEX_QUERY_ID", query_id)
     monkeypatch.setattr(sys, "argv", ["trade_history.py", "--config", str(config)])
 
     with pytest.raises(SystemExit) as excinfo:

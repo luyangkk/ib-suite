@@ -4,10 +4,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 import sys
 import xml.etree.ElementTree as ET
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -66,20 +65,12 @@ def select_flex_window(
     return largest, query_ids[largest], note
 
 
-def resolve_flex_credentials(cfg: Config, environ: Mapping[str, str]) -> tuple[str, str]:
-    """Return one complete Flex credential pair from config or environment."""
-    config_pair = (cfg.flex.token, cfg.flex.query_id)
-    if all(config_pair):
-        return config_pair
-    if any(config_pair):
-        raise ValueError("config.flex.token and config.flex.query_id must both be configured")
-    env_pair = (environ.get("FLEX_TOKEN"), environ.get("FLEX_QUERY_ID"))
-    if all(env_pair):
-        return env_pair
-    if any(env_pair):
-        raise ValueError("FLEX_TOKEN and FLEX_QUERY_ID must both be configured")
+def resolve_flex_token(cfg: Config) -> str:
+    """Return the Flex token from local configuration or raise actionably."""
+    if cfg.flex.token:
+        return cfg.flex.token
     raise ValueError(
-        "Flex credentials are not configured; run ib-trade-history setup or set both environment variables"
+        "Flex token is not configured; run configure_flex.py --token before querying"
     )
 
 
@@ -159,7 +150,11 @@ def summarize(trades: list[FlexTrade]) -> TradeHistorySummary:
 
 
 def build_report(
-    trades: list[FlexTrade], start_date: date, end_date: date, base_currency: str
+    trades: list[FlexTrade],
+    start_date: date,
+    end_date: date,
+    base_currency: str,
+    coverage_note: str | None = None,
 ) -> TradeHistoryReport:
     """Filter Flex fills by inclusive date and assemble the typed response."""
     if start_date > end_date:
@@ -172,6 +167,7 @@ def build_report(
         base_currency=base_currency,
         trades=normalized,
         summary=summarize(normalized),
+        coverage_note=coverage_note,
     )
 
 
@@ -181,7 +177,6 @@ def trade_history(
     end: str | None,
     fetcher: Callable[[str, str], str] = fetch_flex_report,
     today: date | None = None,
-    environ: dict[str, str] | None = None,
 ) -> dict:
     """Fetch Flex trades once and return a JSON-safe inclusive-period report."""
     cfg = load_config(config_path)
@@ -191,15 +186,18 @@ def trade_history(
             "data.base_currency is required for Flex trade-history conversion; "
             "set it in .ib-suite/config.yaml"
         )
-    env = os.environ if environ is None else environ
-    token, query_id = resolve_flex_credentials(cfg, env)
-    start_date, end_date = resolve_period(start, end, today or date.today())
+    token = resolve_flex_token(cfg)
+    resolved_today = today or date.today()
+    start_date, end_date = resolve_period(start, end, resolved_today)
+    _, query_id, coverage_note = select_flex_window(
+        cfg.flex.query_ids, start_date, resolved_today
+    )
     try:
         xml_text = fetcher(token, query_id)
     except (requests.RequestException, RuntimeError, ET.ParseError, ValueError):
         raise RuntimeError(
-            "Flex report retrieval failed; verify FLEX_TOKEN, FLEX_QUERY_ID, "
-            "Flex Query settings, and service status"
+            "Flex report retrieval failed; verify the Flex token, Flex Query "
+            "settings, and service status"
         ) from None
     try:
         records = parse_flex_trade_records(xml_text)
@@ -207,7 +205,9 @@ def trade_history(
         raise RuntimeError(
             "Flex response is not a valid report; check the Flex Query and service status"
         ) from None
-    return build_report(records, start_date, end_date, base_currency).model_dump(mode="json")
+    return build_report(
+        records, start_date, end_date, base_currency, coverage_note
+    ).model_dump(mode="json")
 
 
 def main() -> None:
