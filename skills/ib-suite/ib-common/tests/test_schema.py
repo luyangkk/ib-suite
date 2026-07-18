@@ -56,7 +56,7 @@ def test_option_position_view_serializes_nullable_market_data():
         expiry_date=date(2026, 8, 21),
         days_to_expiry=35,
         avg_cost=1234.0,
-        market_price=12.5,
+        market_price=None,
         market_value=2500.0,
         unrealized_pnl=32.0,
         currency="USD",
@@ -72,7 +72,30 @@ def test_option_position_view_serializes_nullable_market_data():
     )
 
     assert position.position_side == "LONG"
+    assert position.market_price is None
     assert position.model_dump(mode="json")["theta"] is None
+
+
+def test_option_position_view_serializes_missing_market_price_as_null():
+    """An unavailable IB market price is an explicit nullable data field."""
+    position = OptionPositionView(
+        account_id="U0000000",
+        underlying_symbol="AAPL",
+        right="CALL",
+        quantity=2,
+        strike=200.0,
+        expiry_date=date(2026, 8, 21),
+        days_to_expiry=35,
+        avg_cost=1234.0,
+        market_price=None,
+        market_value=2500.0,
+        unrealized_pnl=32.0,
+        currency="USD",
+        multiplier=100,
+        greeks_status="INCOMPLETE",
+    )
+
+    assert position.model_dump(mode="json")["market_price"] is None
 
 
 def test_options_overview_preserves_null_aggregate_when_uncovered():

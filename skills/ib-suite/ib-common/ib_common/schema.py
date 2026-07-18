@@ -290,7 +290,7 @@ class OptionPositionView(BaseModel):
     expiry_date: date
     days_to_expiry: int
     avg_cost: float
-    market_price: float
+    market_price: float | None
     market_value: float
     unrealized_pnl: float
     currency: str
@@ -328,6 +328,7 @@ class OptionExpirationBucket(BaseModel):
     contract_count: int
     quantity: float
     absolute_base_market_value: float | None = None
+    base_market_value_coverage: float | None = None
 
 
 class OptionUnderlyingConcentration(BaseModel):
@@ -335,6 +336,7 @@ class OptionUnderlyingConcentration(BaseModel):
 
     underlying_symbol: str
     absolute_base_market_value: float | None = None
+    base_market_value_coverage: float | None = None
     weight: float | None = None
 
 

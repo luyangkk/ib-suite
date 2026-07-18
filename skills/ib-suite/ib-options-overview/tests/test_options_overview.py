@@ -125,10 +125,49 @@ def test_missing_fx_rate_leaves_foreign_currency_base_fields_null():
     assert any("missing FX rate" in item for item in overview.data_limitations)
 
 
+def test_partial_fx_coverage_keeps_convertible_expiry_and_underlying_exposure():
+    """One missing FX rate does not erase convertible exposure in its groups."""
+    raw = _raw()
+    missing_fx = raw["options"][1]
+    missing_fx["currency"] = "EUR"
+    missing_fx["fx_rate"] = None
+
+    overview = options_overview.build_options_overview(raw, REPORT_DATE, TS)
+
+    expiry = overview.summary.expiration_distribution[0]
+    aapl = overview.summary.underlying_concentration[0]
+    assert expiry.absolute_base_market_value == 2500.0
+    assert expiry.base_market_value_coverage == 0.5
+    assert aapl.underlying_symbol == "AAPL"
+    assert aapl.absolute_base_market_value == 2500.0
+    assert aapl.base_market_value_coverage == 0.5
+    assert aapl.weight == 2500.0 / 3000.0
+    assert any(
+        "AAPL" in limitation and "partial base market value coverage" in limitation
+        for limitation in overview.data_limitations
+    )
+
+
 def test_invalid_right_names_contract_and_right_field():
     """Unsupported option rights fail before a misleading moneyness is emitted."""
     raw = _raw()
     raw["options"][0]["right"] = "STRADDLE"
+    raw["options"][0]["underlying_price"] = None
 
     with pytest.raises(ValueError, match=r"AAPL-20260821-C-200.*right"):
         options_overview.build_options_overview(raw, REPORT_DATE, TS)
+
+
+def test_missing_option_market_price_stays_null_with_limitation():
+    """An unavailable option quote is preserved rather than coercively converted."""
+    raw = _raw()
+    raw["options"][0]["market_price"] = None
+
+    overview = options_overview.build_options_overview(raw, REPORT_DATE, TS)
+
+    position = overview.options[0]
+    assert position.market_price is None
+    assert any(
+        "AAPL" in limitation and "missing market price" in limitation
+        for limitation in overview.data_limitations
+    )
