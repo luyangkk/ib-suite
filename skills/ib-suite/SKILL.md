@@ -45,9 +45,9 @@ onboarding; the sub-skills stay gated until `config.yaml` is present.
    It refuses to overwrite an existing config unless you add `--force`.
 5. **Report back:** the config path and the resulting mode/port. Remind the
    user to start IB Gateway with **Read-Only API** enabled before `/ib-sync`,
-   and that `ib-trade-history` can configure a credential pair in ignored local
-   config. A complete `FLEX_TOKEN` and `FLEX_QUERY_ID` environment pair is only
-   a compatibility fallback; never echo either credential.
+   and that `ib-trade-history` stores its Flex token and per-window Query IDs in
+   ignored local config (`flex.token` / `flex.query_ids`); never echo either
+   credential.
 6. Proceed to §2 and run `/ib-sync` → `/ib-analyze`.
 
 Runtime config and data stay workspace-local under `<workspace>/.ib-suite/`
@@ -190,7 +190,6 @@ output paths) to stdout and return non-zero on failure:
 ```
 
 **As a library.** `import ib_common` (installed editable) for config/schema/
-storage/metrics/charts. `ib-trade-history` can configure its Flex credential
-pair in ignored local config; a complete `FLEX_TOKEN` and `FLEX_QUERY_ID`
-environment pair is only a compatibility fallback. Never hardcode or echo
-tokens, account numbers, or user paths.
+storage/metrics/charts. `ib-trade-history` stores its Flex token and per-window
+Query IDs (`flex.token` / `flex.query_ids`) in ignored local config. Never
+hardcode or echo tokens, account numbers, or user paths.
