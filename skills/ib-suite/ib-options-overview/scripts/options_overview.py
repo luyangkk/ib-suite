@@ -450,20 +450,22 @@ def _default_client_factory(cfg):
                     for item, ticker in option_subscriptions
                     if _model_underlying_price(ticker) is None
                 }
-                underlying_contracts = [
-                    Stock(symbol, "SMART", currency)
-                    for symbol, currency in missing_keys
-                ]
+                underlying_contracts = {
+                    key: Stock(key[0], "SMART", key[1]) for key in missing_keys
+                }
                 if underlying_contracts:
-                    for contract in self.ib.qualifyContracts(*underlying_contracts):
+                    qualified_contracts = self.ib.qualifyContracts(
+                        *underlying_contracts.values()
+                    )
+                    for key, contract in zip(underlying_contracts, qualified_contracts):
+                        if contract is None:
+                            continue
                         ticker = self.ib.reqMktData(contract, "", False, False)
-                        underlying_subscriptions[
-                            (contract.symbol, contract.currency)
-                        ] = (contract, ticker)
+                        underlying_subscriptions[key] = (contract, ticker)
                 _wait_until(
                     self.ib,
                     lambda: all(
-                        any(
+                        all(
                             _model_underlying_price(option_ticker) is not None
                             for item, option_ticker in option_subscriptions
                             if (item.contract.symbol, item.contract.currency) == key

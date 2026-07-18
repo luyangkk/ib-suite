@@ -456,11 +456,21 @@ def test_live_client_uses_one_underlying_quote_for_missing_model_prices(
         for index, strike in ((1, 200.0), (2, 205.0))
     ]
     option_tickers = {
-        contract.conId: SimpleNamespace(
+        1: SimpleNamespace(
+            modelGreeks=SimpleNamespace(
+                impliedVol=0.25,
+                delta=0.5,
+                gamma=0.03,
+                theta=-0.14,
+                vega=0.4,
+                undPrice=210.0,
+            ),
+            marketPrice=lambda: 12.5,
+        ),
+        2: SimpleNamespace(
             modelGreeks=None,
             marketPrice=lambda: 12.5,
-        )
-        for contract in option_contracts
+        ),
     }
 
     class FakeStock:
@@ -574,8 +584,8 @@ def test_quoted_underlying_price_prefers_market_price_and_then_close():
     assert options_overview._quoted_underlying_price(ticker) == 205.0
 
 
-def test_live_client_keeps_only_unavailable_fallback_as_null(monkeypatch, tmp_path):
-    """A failed quote for one underlying does not erase another underlying quote."""
+def test_live_client_skips_none_qualified_underlying_contract(monkeypatch, tmp_path):
+    """A missing qualification keeps only that underlying unclassified."""
     option_contracts = [
         SimpleNamespace(
             conId=index,
@@ -636,14 +646,15 @@ def test_live_client_keeps_only_unavailable_fallback_as_null(monkeypatch, tmp_pa
             ]
 
         def qualifyContracts(self, *contracts):
-            return list(contracts)
+            return [None if contract.symbol == "AAPL" else contract for contract in contracts]
 
         def reqMktData(self, contract, generic_tick_list, snapshot, regulatory_snapshot):
+            assert contract is not None
             if contract.secType == "OPT":
                 return SimpleNamespace(modelGreeks=None, marketPrice=lambda: 12.5)
             return SimpleNamespace(
                 close=None,
-                marketPrice=(lambda: 210.0) if contract.symbol == "AAPL" else (lambda: math.nan),
+                marketPrice=(lambda: 210.0) if contract.symbol == "MSFT" else (lambda: math.nan),
             )
 
         def sleep(self, seconds):
@@ -665,7 +676,20 @@ def test_live_client_keeps_only_unavailable_fallback_as_null(monkeypatch, tmp_pa
 
     raw = options_overview._default_client_factory(load_config(cfg_path)).fetch_raw()
 
-    assert [row["underlying_price"] for row in raw["options"]] == [210.0, None]
+    assert [row["underlying_price"] for row in raw["options"]] == [None, 210.0]
+    overview = options_overview.build_options_overview(raw, REPORT_DATE, TS)
+    assert [row.moneyness for row in overview.options] == [None, "ITM"]
+    assert any(
+        "AAPL" in limitation and "missing underlying price" in limitation
+        for limitation in overview.data_limitations
+    )
+    assert {id(contract) for contract in FakeIB.instance.cancelled} == {
+        id(contract)
+        for contract in [
+            *option_contracts,
+            next(stock for stock in FakeStock.constructed if stock.symbol == "MSFT"),
+        ]
+    }
 
 
 def test_live_client_cancels_partial_underlying_subscriptions_on_error(
