@@ -1,8 +1,12 @@
-"""Pure mapping of raw option positions into a deterministic risk overview."""
+"""Read-only IB option acquisition and deterministic risk overview mapping."""
 from __future__ import annotations
 
+import argparse
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+import json
+
+from ib_common.config import load_config, resolve_base_currency
 
 from ib_common.schema import (
     OptionExpirationBucket,
@@ -290,3 +294,169 @@ def build_options_overview(
         data_limitations=limitations + summary_limitations,
         ts=ts,
     )
+
+
+def _market_data_type_code(mode: str) -> int:
+    """Return IB's configured market-data type code."""
+    codes = {
+        "realtime": 1,
+        "frozen": 2,
+        "delayed": 3,
+        "delayed_frozen": 4,
+    }
+    try:
+        return codes[mode]
+    except KeyError as error:
+        raise ValueError(
+            f"unknown market_data_type {mode!r}; expected one of {sorted(codes)}"
+        ) from error
+
+
+def _exchange_rates(account_values) -> dict[str, float]:
+    """Collect local-to-base exchange rates from IB ledger rows."""
+    rates: dict[str, float] = {}
+    for value in account_values:
+        if (
+            value.tag == "$LEDGER-ExchangeRate"
+            and value.currency
+            and value.currency != "BASE"
+        ):
+            try:
+                rates[value.currency] = float(value.value)
+            except (TypeError, ValueError):
+                continue
+    return rates
+
+
+def _option_right(right: str) -> str:
+    """Normalize IB's compact option right value to the report vocabulary."""
+    return {"C": "CALL", "P": "PUT"}.get(right, right)
+
+
+def _contract_id(contract) -> str:
+    """Build a stable readable identifier for an IB option contract."""
+    return (
+        f"{contract.symbol}-{contract.lastTradeDateOrContractMonth}-"
+        f"{contract.right}-{contract.strike:g}"
+    )
+
+
+def _default_client_factory(cfg):
+    """Build a read-only IB Gateway client, imported lazily for offline tests."""
+    from ib_async import IB
+
+    class _LiveClient:
+        """Read the account option book and its model Greeks from IB Gateway."""
+
+        def __init__(self, cfg):
+            """Connect with IB's enforced read-only Gateway API mode."""
+            self.ib = IB()
+            self.ib.connect(
+                cfg.connection.host,
+                cfg.connection.port,
+                clientId=cfg.connection.client_id,
+                readonly=True,
+            )
+            self.ib.reqMarketDataType(
+                _market_data_type_code(cfg.connection.market_data_type)
+            )
+
+        def fetch_raw(self) -> dict:
+            """Read IB-valued option positions and their bounded quote snapshot."""
+            account_id = self.ib.managedAccounts()[0]
+            account_values = self.ib.accountValues(account_id)
+            summary = {value.tag: value.value for value in account_values}
+            fx_rates = _exchange_rates(account_values)
+            base_currency = summary.get("Currency")
+            if base_currency:
+                fx_rates[base_currency] = 1.0
+            positions = [
+                item
+                for item in self.ib.portfolio(account_id)
+                if item.contract.secType == "OPT"
+            ]
+            subscriptions: list[tuple[object, object]] = []
+            try:
+                for item in positions:
+                    contract = item.contract
+                    ticker = self.ib.reqMktData(contract, "", False, False)
+                    subscriptions.append((item, ticker))
+                self.ib.sleep(4.0)
+
+                options: list[dict] = []
+                for item, ticker in subscriptions:
+                    contract = item.contract
+                    greeks = ticker.modelGreeks
+                    options.append(
+                        {
+                            "contract_id": _contract_id(contract),
+                            "underlying_symbol": contract.symbol,
+                            "right": _option_right(contract.right),
+                            "strike": contract.strike,
+                            "expiry_date": str(
+                                contract.lastTradeDateOrContractMonth
+                            ),
+                            "multiplier": str(contract.multiplier),
+                            "quantity": item.position,
+                            "avg_cost": item.averageCost,
+                            "market_price": ticker.marketPrice(),
+                            "market_value": item.marketValue,
+                            "unrealized_pnl": item.unrealizedPNL,
+                            "currency": contract.currency,
+                            "fx_rate": fx_rates.get(contract.currency),
+                            "implied_volatility": (
+                                greeks.impliedVol if greeks is not None else None
+                            ),
+                            "delta": greeks.delta if greeks is not None else None,
+                            "gamma": greeks.gamma if greeks is not None else None,
+                            "theta": greeks.theta if greeks is not None else None,
+                            "vega": greeks.vega if greeks is not None else None,
+                            "underlying_price": (
+                                greeks.undPrice if greeks is not None else None
+                            ),
+                        }
+                    )
+            finally:
+                for item, _ in subscriptions:
+                    self.ib.cancelMktData(item.contract)
+
+            return {
+                "account": {
+                    "account_id": account_id,
+                    "base_currency": summary.get("Currency"),
+                },
+                "options": options,
+            }
+
+        def disconnect(self) -> None:
+            """Close the read-only Gateway session."""
+            self.ib.disconnect()
+
+    return _LiveClient(cfg)
+
+
+def options_overview(cfg_path: str, client_factory=None, now=None) -> dict:
+    """Load config, pull a read-only option book, and return JSON-safe data."""
+    cfg = load_config(cfg_path)
+    client = (client_factory or _default_client_factory)(cfg)
+    try:
+        raw = client.fetch_raw()
+    finally:
+        client.disconnect()
+    raw["account"]["base_currency"] = resolve_base_currency(
+        cfg, raw["account"].get("base_currency")
+    )
+    stamp = (now or (lambda: datetime.now(timezone.utc)))()
+    return build_options_overview(raw, stamp.date(), stamp).model_dump(mode="json")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Read-only option Greeks overview from IB Gateway."
+    )
+    parser.add_argument("--config", required=True, help="path to config.yaml")
+    args = parser.parse_args()
+    try:
+        print(json.dumps(options_overview(args.config), ensure_ascii=False))
+    except (FileNotFoundError, ValueError) as error:
+        parser.error(str(error))

@@ -5,8 +5,12 @@ from datetime import date, datetime, timezone
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
+import sys
 
 import pytest
+
+from ib_common.config import load_config
 
 
 SPEC = Path(__file__).parent.parent / "scripts" / "options_overview.py"
@@ -171,3 +175,195 @@ def test_missing_option_market_price_stays_null_with_limitation():
         "AAPL" in limitation and "missing market price" in limitation
         for limitation in overview.data_limitations
     )
+
+
+def test_orchestration_uses_injected_client_and_disconnects(tmp_path):
+    """The Gateway orchestration emits JSON-safe data and closes its client."""
+    class FakeClient:
+        """Offline stand-in for a read-only IB Gateway session."""
+
+        disconnected = False
+
+        def fetch_raw(self):
+            """Return the deterministic option-book fixture."""
+            return _raw()
+
+        def disconnect(self):
+            """Record that the session was closed."""
+            FakeClient.disconnected = True
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("data:\n  base_currency: USD\n")
+
+    out = options_overview.options_overview(
+        str(cfg_path),
+        client_factory=lambda cfg: FakeClient(),
+        now=lambda: TS,
+    )
+
+    assert FakeClient.disconnected is True
+    assert out["account_id"] == "U0000000"
+    assert out["summary"]["daily_time_value_decay"] == 24.0
+
+
+def test_orchestration_disconnects_when_gateway_fetch_fails(tmp_path):
+    """The Gateway session closes even when fetching the option book fails."""
+    class FailingClient:
+        """Offline client that fails during acquisition."""
+
+        disconnected = False
+
+        def fetch_raw(self):
+            """Simulate an IB Gateway acquisition failure."""
+            raise RuntimeError("Gateway unavailable")
+
+        def disconnect(self):
+            """Record that the session was closed."""
+            FailingClient.disconnected = True
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("data:\n  base_currency: USD\n")
+
+    with pytest.raises(RuntimeError, match="Gateway unavailable"):
+        options_overview.options_overview(
+            str(cfg_path),
+            client_factory=lambda cfg: FailingClient(),
+            now=lambda: TS,
+        )
+
+    assert FailingClient.disconnected is True
+
+
+def test_live_client_collects_option_greeks_and_cancels_market_data(
+    monkeypatch, tmp_path
+):
+    """The read-only Gateway client maps option data and closes every quote."""
+    contract = SimpleNamespace(
+        conId=1,
+        symbol="AAPL",
+        secType="OPT",
+        currency="USD",
+        lastTradeDateOrContractMonth="20260821",
+        right="C",
+        strike=200.0,
+        multiplier="100",
+    )
+    ticker = SimpleNamespace(
+        contract=contract,
+        modelGreeks=SimpleNamespace(
+            impliedVol=0.25,
+            delta=0.5,
+            gamma=0.03,
+            theta=-0.14,
+            vega=0.4,
+            undPrice=210.0,
+        ),
+        marketPrice=lambda: 12.5,
+    )
+
+    class FakeIB:
+        """Record the read-only operations made by the live client."""
+
+        instance = None
+
+        def __init__(self):
+            """Create an inspectable fake Gateway connection."""
+            FakeIB.instance = self
+            self.connect_kwargs = None
+            self.market_data_types = []
+            self.cancelled = []
+            self.disconnected = False
+
+        def connect(self, *args, **kwargs):
+            """Record the connection arguments."""
+            self.connect_kwargs = (args, kwargs)
+
+        def reqMarketDataType(self, market_data_type):
+            """Record the requested market-data tier."""
+            self.market_data_types.append(market_data_type)
+
+        def managedAccounts(self):
+            """Return one deterministic account."""
+            return ["U0000000"]
+
+        def accountValues(self, account_id=None):
+            """Return account base currency and local-to-base FX."""
+            return [
+                SimpleNamespace(tag="Currency", value="USD", currency="BASE"),
+                SimpleNamespace(
+                    tag="$LEDGER-ExchangeRate", value="1.0", currency="USD"
+                ),
+            ]
+
+        def portfolio(self, account_id):
+            """Return one IB-valued option position."""
+            return [
+                SimpleNamespace(
+                    contract=contract,
+                    position=2,
+                    averageCost=1000.0,
+                    marketValue=2500.0,
+                    unrealizedPNL=500.0,
+                )
+            ]
+
+        def reqMktData(self, requested_contract, generic_tick_list, snapshot, regulatory_snapshot):
+            """Return the deterministic option ticker."""
+            assert requested_contract is contract
+            assert (generic_tick_list, snapshot, regulatory_snapshot) == ("", False, False)
+            return ticker
+
+        def sleep(self, seconds):
+            """Accept the bounded collection-window wait."""
+            assert seconds == 4.0
+
+        def cancelMktData(self, requested_contract):
+            """Record the closed market-data subscription."""
+            self.cancelled.append(requested_contract)
+
+        def disconnect(self):
+            """Record connection cleanup."""
+            self.disconnected = True
+
+    monkeypatch.setitem(sys.modules, "ib_async", SimpleNamespace(IB=FakeIB))
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("connection:\n  market_data_type: delayed\n")
+
+    client = options_overview._default_client_factory(load_config(cfg_path))
+    raw = client.fetch_raw()
+    client.disconnect()
+
+    fake = FakeIB.instance
+    assert fake.connect_kwargs[1]["readonly"] is True
+    assert fake.market_data_types == [3]
+    assert fake.cancelled == [contract]
+    assert fake.disconnected is True
+    assert raw["options"] == [
+        {
+            "contract_id": "AAPL-20260821-C-200",
+            "underlying_symbol": "AAPL",
+            "right": "CALL",
+            "strike": 200.0,
+            "expiry_date": "20260821",
+            "multiplier": "100",
+            "quantity": 2,
+            "avg_cost": 1000.0,
+            "market_price": 12.5,
+            "market_value": 2500.0,
+            "unrealized_pnl": 500.0,
+            "currency": "USD",
+            "fx_rate": 1.0,
+            "implied_volatility": 0.25,
+            "delta": 0.5,
+            "gamma": 0.03,
+            "theta": -0.14,
+            "vega": 0.4,
+            "underlying_price": 210.0,
+        }
+    ]
+
+
+def test_module_never_imports_order_apis():
+    """Read-only guarantee: this source must never touch an order path."""
+    for forbidden in ("placeOrder", "cancelOrder", "reqGlobalCancel", "bracketOrder"):
+        assert forbidden not in SPEC.read_text()
