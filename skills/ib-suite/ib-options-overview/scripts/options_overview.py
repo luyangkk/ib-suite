@@ -5,6 +5,7 @@ import argparse
 from collections import defaultdict
 from datetime import date, datetime, timezone
 import json
+import math
 
 from ib_common.config import load_config, resolve_base_currency
 
@@ -50,6 +51,14 @@ def _contract_identifier(position: OptionPositionView) -> str:
         f"{position.underlying_symbol} {position.expiry_date.isoformat()} "
         f"{position.strike:g}"
     )
+
+
+def _finite_float(value: object) -> float | None:
+    """Return a finite numeric value or null for IB's unavailable sentinels."""
+    if value is None:
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
 
 
 def _parse_multiplier(raw_multiplier: object, contract_id: str) -> int:
@@ -249,11 +258,7 @@ def build_options_overview(
             expiry_date=expiry_date,
             days_to_expiry=(expiry_date - report_date).days + 1,
             avg_cost=float(option["avg_cost"]),
-            market_price=(
-                float(option["market_price"])
-                if option.get("market_price") is not None
-                else None
-            ),
+            market_price=_finite_float(option.get("market_price")),
             market_value=float(option["market_value"]),
             unrealized_pnl=float(option["unrealized_pnl"]),
             currency=option["currency"],
@@ -328,6 +333,18 @@ def _exchange_rates(account_values) -> dict[str, float]:
     return rates
 
 
+def _account_base_currency(account_values) -> str | None:
+    """Resolve IB's account base currency from account-value metadata."""
+    values = list(account_values)
+    for value in values:
+        if value.tag == "Currency" and value.value:
+            return str(value.value)
+    for value in values:
+        if value.tag == "NetLiquidation" and value.currency:
+            return str(value.currency)
+    return None
+
+
 def _option_right(right: str) -> str:
     """Normalize IB's compact option right value to the report vocabulary."""
     return {"C": "CALL", "P": "PUT"}.get(right, right)
@@ -367,7 +384,7 @@ def _default_client_factory(cfg):
             account_values = self.ib.accountValues(account_id)
             summary = {value.tag: value.value for value in account_values}
             fx_rates = _exchange_rates(account_values)
-            base_currency = summary.get("Currency")
+            base_currency = _account_base_currency(account_values)
             if base_currency:
                 fx_rates[base_currency] = 1.0
             positions = [
@@ -423,7 +440,7 @@ def _default_client_factory(cfg):
             return {
                 "account": {
                     "account_id": account_id,
-                    "base_currency": summary.get("Currency"),
+                    "base_currency": base_currency,
                 },
                 "options": options,
             }

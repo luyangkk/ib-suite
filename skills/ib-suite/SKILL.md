@@ -60,6 +60,7 @@ Runtime config and data stay workspace-local under `<workspace>/.ib-suite/`
 | [ib-account-overview]({baseDir}/ib-account-overview) | Read-only account financial overview skill → `/ib-account-overview` | Yes | Yes (IB Gateway) |
 | [ib-positions-overview]({baseDir}/ib-positions-overview) | Read-only enriched positions overview skill → `/ib-positions-overview` | Yes | Yes (IB Gateway) |
 | [ib-daily-pnl]({baseDir}/ib-daily-pnl) | Read-only daily (today's) P&L breakdown skill → `/ib-daily-pnl` | Yes | Yes (IB Gateway) |
+| [ib-options-overview]({baseDir}/ib-options-overview) | Read-only option positions and Greeks overview skill → `/ib-options-overview` | Yes | Yes (IB Gateway) |
 | [ib-portfolio-analyst]({baseDir}/ib-portfolio-analyst) | Offline diagnostics skill → `/ib-analyze` | Yes | No |
 
 ```
@@ -71,6 +72,7 @@ skills/ib-suite/
   ib-account-overview/     # /ib-account-overview: IB account -> financial overview (no persistence)
   ib-positions-overview/   # /ib-positions-overview: IB positions -> enriched, ranked overview (no persistence)
   ib-daily-pnl/            # /ib-daily-pnl: IB live P&L -> today's realized/unrealized, ranked (no persistence)
+  ib-options-overview/     # /ib-options-overview: IB live options -> Greeks and risk overview (no persistence)
   ib-portfolio-analyst/    # /ib-analyze: data lake -> report.md + charts
 ```
 
@@ -120,6 +122,7 @@ setup_venv.sh        ->  ib-gateway /ib-sync      ->  ib-portfolio-analyst /ib-a
 | See account equity, margin, liquidity & P&L right now | `ib-account-overview` → `/ib-account-overview` |
 | List every position, ranked, with the most concentrated name | `ib-positions-overview` → `/ib-positions-overview` |
 | See how the account did today and which names drove it | `ib-daily-pnl` → `/ib-daily-pnl` |
+| Inspect option holdings, IV, Greeks, expiry exposure, and concentration | `ib-options-overview` → `/ib-options-overview` |
 | Produce a diagnostic report from existing data | `ib-portfolio-analyst` → `/ib-analyze` |
 | Test either skill without IB | its `tests/` fixtures (see §5) |
 

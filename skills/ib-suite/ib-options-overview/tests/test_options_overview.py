@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 import importlib.util
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -175,6 +176,17 @@ def test_missing_option_market_price_stays_null_with_limitation():
         "AAPL" in limitation and "missing market price" in limitation
         for limitation in overview.data_limitations
     )
+
+
+def test_nan_option_market_price_stays_null_with_limitation():
+    """IB's unavailable market-price sentinel does not leak into JSON output."""
+    raw = _raw()
+    raw["options"][0]["market_price"] = math.nan
+
+    overview = options_overview.build_options_overview(raw, REPORT_DATE, TS)
+    position = overview.options[0]
+
+    assert position.market_price is None
 
 
 def test_orchestration_uses_injected_client_and_disconnects(tmp_path):
@@ -367,3 +379,12 @@ def test_module_never_imports_order_apis():
     """Read-only guarantee: this source must never touch an order path."""
     for forbidden in ("placeOrder", "cancelOrder", "reqGlobalCancel", "bracketOrder"):
         assert forbidden not in SPEC.read_text()
+
+
+def test_base_currency_falls_back_to_net_liquidation_currency():
+    """IB accounts without a Currency tag use NetLiquidation's quote currency."""
+    values = [
+        SimpleNamespace(tag="NetLiquidation", value="100000", currency="USD"),
+    ]
+
+    assert options_overview._account_base_currency(values) == "USD"
