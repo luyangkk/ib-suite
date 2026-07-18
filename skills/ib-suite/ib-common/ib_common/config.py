@@ -27,10 +27,18 @@ class StorageCfg(BaseModel):
     root: str = "./data"
 
 
+class FlexCfg(BaseModel):
+    """Workspace-local IBKR Flex credentials for the trade-history skill."""
+
+    token: str | None = None
+    query_id: str | None = None
+
+
 class Config(BaseModel):
     connection: ConnectionCfg = Field(default_factory=ConnectionCfg)
     data: DataCfg = Field(default_factory=DataCfg)
     storage: StorageCfg = Field(default_factory=StorageCfg)
+    flex: FlexCfg = Field(default_factory=FlexCfg)
     thresholds: dict[str, float] = Field(default_factory=dict)
 
 

@@ -6,7 +6,7 @@ only on these types, never on raw ib_async objects.
 """
 from __future__ import annotations
 from datetime import date, datetime
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, Field, PrivateAttr, computed_field
 
 
 class Account(BaseModel):
@@ -64,6 +64,82 @@ class Execution(BaseModel):
     price: float
     commission: float
     ts: datetime
+
+
+class FlexTrade(BaseModel):
+    """One IBKR Flex Trade execution with local and optional base FX amounts."""
+
+    exec_id: str
+    ts: datetime
+    symbol: str
+    side: str
+    quantity: float
+    price: float
+    commission: float
+    currency: str
+    commission_currency: str
+    multiplier: float = Field(default=1.0, gt=0)
+    order_type: str
+    exchange: str
+    open_close: str = ""
+    realized_pnl: float
+    fx_rate_to_base: float | None = None
+    _commission_fx_rate_to_base: float | None = PrivateAttr(default=None)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def notional(self) -> float:
+        """Absolute local-currency execution notional."""
+        return abs(self.quantity * self.price * self.multiplier)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def base_notional(self) -> float | None:
+        """Execution notional converted by Flex's local-to-base FX rate."""
+        return None if self.fx_rate_to_base is None else self.notional * self.fx_rate_to_base
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def base_commission(self) -> float | None:
+        """Absolute commission converted by its own local-to-base FX rate."""
+        rate = (
+            self.fx_rate_to_base
+            if self.commission_currency == self.currency
+            else self._commission_fx_rate_to_base
+        )
+        return None if rate is None else abs(self.commission) * rate
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def base_realized_pnl(self) -> float | None:
+        """IBKR FIFO realized P&L converted by Flex's local-to-base FX rate."""
+        return None if self.fx_rate_to_base is None else self.realized_pnl * self.fx_rate_to_base
+
+
+class TradeHistorySummary(BaseModel):
+    """Base-currency aggregate statistics for an inclusive trade period."""
+
+    total_trades: int
+    buy_count: int
+    sell_count: int
+    total_notional: float
+    total_commission: float
+    profitable_trades: int
+    losing_trades: int
+    win_rate: float | None
+    average_profit: float | None
+    average_loss: float | None
+    profit_loss_ratio: float | None
+
+
+class TradeHistoryReport(BaseModel):
+    """Read-only Flex trade records and their base-currency summary."""
+
+    start_date: date
+    end_date: date
+    base_currency: str
+    trades: list[FlexTrade]
+    summary: TradeHistorySummary
 
 
 class DailyBar(BaseModel):

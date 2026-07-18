@@ -30,3 +30,10 @@ def test_market_data_type_defaults_to_delayed():
     """Accounts without a live subscription still get delayed marks by default."""
     cfg = load_config(FIX / "config_minimal.yaml")
     assert cfg.connection.market_data_type == "delayed"
+
+
+def test_flex_config_defaults_to_empty_credentials():
+    """Configs without Flex settings expose empty workspace-local credentials."""
+    cfg = load_config(FIX / "config_minimal.yaml")
+    assert cfg.flex.token is None
+    assert cfg.flex.query_id is None

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FlexQueryResponse>
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000">
+      <Trades>
+        <Trade tradeID="B1" dateTime="2026-07-09;09:30:00" symbol="AAPL" buySell="BUY"
+               quantity="10" tradePrice="100" ibCommission="-1" currency="USD"
+               ibCommissionCurrency="USD"
+               orderType="LMT" exchange="NASDAQ" openCloseIndicator="O"
+               fifoPnlRealized="0" fxRateToBase="1"/>
+        <Trade tradeID="S1" dateTime="2026-07-10;10:00:00" symbol="AAPL" buySell="SELL"
+               quantity="10" tradePrice="120" ibCommission="-1" currency="USD"
+               ibCommissionCurrency="USD"
+               orderType="LMT" exchange="NASDAQ" openCloseIndicator="C"
+               fifoPnlRealized="200" fxRateToBase="1"/>
+        <Trade tradeID="S2" dateTime="2026-07-11;11:00:00" symbol="D05" buySell="SELL"
+               quantity="100" tradePrice="40" ibCommission="-4" currency="SGD"
+               ibCommissionCurrency="USD"
+               orderType="MKT" exchange="SGX" openCloseIndicator="C"
+               fifoPnlRealized="-100" fxRateToBase="0.75"/>
+        <Trade tradeID="OLD1" assetCategory="CASH" dateTime="2026-07-08;11:00:00"
+               symbol="EUR.USD" buySell="SELL"
+               quantity="1" tradePrice="300" ibCommission="-1" currency="USD"
+               ibCommissionCurrency="USD"
+               orderType="MKT" exchange="IDEALPRO" openCloseIndicator=""
+               fifoPnlRealized="10" fxRateToBase="1"/>
+      </Trades>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

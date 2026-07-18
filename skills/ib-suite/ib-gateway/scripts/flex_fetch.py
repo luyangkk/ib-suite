@@ -8,10 +8,10 @@ reqExecutions window.
 from __future__ import annotations
 import time
 import xml.etree.ElementTree as ET
-from datetime import datetime, date
+from datetime import date, datetime, timezone
 import requests
 
-from ib_common.schema import Dividend, Execution
+from ib_common.schema import Dividend, Execution, FlexTrade
 
 _FLEX_BASE = "https://gdcdyn.interactivebrokers.com/Universal/servlet"
 
@@ -43,6 +43,54 @@ def parse_flex_dividends(xml_text: str) -> list[Dividend]:
             currency=ct.get("currency", ""),
         ))
     return out
+
+
+def _parse_datetime(value: str) -> datetime:
+    """Parse a required Flex execution timestamp as UTC."""
+    normalized = value.strip()
+    for fmt in ("%Y-%m-%d;%H:%M:%S", "%Y%m%d;%H%M%S"):
+        try:
+            return datetime.strptime(normalized, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    raise ValueError(f"invalid Flex dateTime: {value!r}")
+
+
+def _required(trade: ET.Element, name: str) -> str:
+    """Return one required Flex Trade attribute with a configuration hint."""
+    value = trade.get(name)
+    if value is None or not value.strip():
+        raise ValueError(
+            f"Flex Trade field {name!r} is missing; enable it in the Flex Query Trades section"
+        )
+    return value
+
+
+def parse_flex_trade_records(xml_text: str) -> list[FlexTrade]:
+    """Extract complete Flex execution rows for the trade-history skill."""
+    root = ET.fromstring(xml_text)
+    rows: list[FlexTrade] = []
+    for trade in root.iter("Trade"):
+        fx_text = trade.get("fxRateToBase")
+        multiplier_text = (trade.get("multiplier") or "").strip()
+        rows.append(FlexTrade(
+            exec_id=_required(trade, "tradeID"),
+            ts=_parse_datetime(_required(trade, "dateTime")),
+            symbol=_required(trade, "symbol"),
+            side=_required(trade, "buySell").upper(),
+            quantity=abs(float(_required(trade, "quantity"))),
+            price=float(_required(trade, "tradePrice")),
+            commission=abs(float(_required(trade, "ibCommission"))),
+            currency=_required(trade, "currency").upper(),
+            commission_currency=_required(trade, "ibCommissionCurrency").upper(),
+            multiplier=float(multiplier_text) if multiplier_text else 1.0,
+            order_type=_required(trade, "orderType"),
+            exchange=_required(trade, "exchange"),
+            open_close=(trade.get("openCloseIndicator") or "").upper(),
+            realized_pnl=float(_required(trade, "fifoPnlRealized")),
+            fx_rate_to_base=float(fx_text) if fx_text not in (None, "") else None,
+        ))
+    return rows
 
 
 def parse_flex_trades(xml_text: str) -> list[Execution]:

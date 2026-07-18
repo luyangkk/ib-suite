@@ -4,7 +4,17 @@
     <FlexStatement accountId="U0000000" fromDate="2026-01-01" toDate="2026-07-15">
       <Trades>
         <Trade symbol="AAPL" buySell="BUY" quantity="100" tradePrice="150.00"
-               ibCommission="-1.00" tradeDate="2026-02-01" tradeID="T1"/>
+               ibCommission="-1.00" tradeDate="2026-02-01"
+               dateTime="2026-02-01;15:30:00" tradeID="T1" currency="USD"
+               ibCommissionCurrency="USD"
+               orderType="LMT" exchange="NASDAQ" openCloseIndicator="O"
+               fifoPnlRealized="0.00" fxRateToBase="1.00"/>
+        <Trade symbol="AAPL 260220C00200000" assetCategory="OPT" buySell="BUY"
+               quantity="1" tradePrice="2.00" multiplier="100"
+               ibCommission="-1.00" ibCommissionCurrency="USD" tradeID="OPT1"
+               dateTime="2026-02-02;15:30:00" currency="USD" orderType="LMT"
+               exchange="CBOE" openCloseIndicator="O" fifoPnlRealized="0.00"
+               fxRateToBase="1.00"/>
       </Trades>
       <CashTransactions>
         <CashTransaction symbol="AAPL" type="Dividends" amount="24.00" currency="USD"

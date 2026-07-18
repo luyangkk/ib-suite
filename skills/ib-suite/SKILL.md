@@ -45,7 +45,9 @@ onboarding; the sub-skills stay gated until `config.yaml` is present.
    It refuses to overwrite an existing config unless you add `--force`.
 5. **Report back:** the config path and the resulting mode/port. Remind the
    user to start IB Gateway with **Read-Only API** enabled before `/ib-sync`,
-   and to `export FLEX_TOKEN=…` only when pulling Flex dividends/history.
+   and that `ib-trade-history` can configure a credential pair in ignored local
+   config. A complete `FLEX_TOKEN` and `FLEX_QUERY_ID` environment pair is only
+   a compatibility fallback; never echo either credential.
 6. Proceed to §2 and run `/ib-sync` → `/ib-analyze`.
 
 Runtime config and data stay workspace-local under `<workspace>/.ib-suite/`
@@ -60,6 +62,7 @@ Runtime config and data stay workspace-local under `<workspace>/.ib-suite/`
 | [ib-account-overview]({baseDir}/ib-account-overview) | Read-only account financial overview skill → `/ib-account-overview` | Yes | Yes (IB Gateway) |
 | [ib-positions-overview]({baseDir}/ib-positions-overview) | Read-only enriched positions overview skill → `/ib-positions-overview` | Yes | Yes (IB Gateway) |
 | [ib-daily-pnl]({baseDir}/ib-daily-pnl) | Read-only daily (today's) P&L breakdown skill → `/ib-daily-pnl` | Yes | Yes (IB Gateway) |
+| [ib-trade-history]({baseDir}/ib-trade-history) | Read-only Flex Query execution-history skill → `/ib-trade-history` | Yes | Yes (Flex Web Service) |
 | [ib-portfolio-analyst]({baseDir}/ib-portfolio-analyst) | Offline diagnostics skill → `/ib-analyze` | Yes | No |
 
 ```
@@ -71,6 +74,7 @@ skills/ib-suite/
   ib-account-overview/     # /ib-account-overview: IB account -> financial overview (no persistence)
   ib-positions-overview/   # /ib-positions-overview: IB positions -> enriched, ranked overview (no persistence)
   ib-daily-pnl/            # /ib-daily-pnl: IB live P&L -> today's realized/unrealized, ranked (no persistence)
+  ib-trade-history/        # /ib-trade-history: Flex executions -> stdout JSON (no persistence)
   ib-portfolio-analyst/    # /ib-analyze: data lake -> report.md + charts
 ```
 
@@ -120,6 +124,8 @@ setup_venv.sh        ->  ib-gateway /ib-sync      ->  ib-portfolio-analyst /ib-a
 | See account equity, margin, liquidity & P&L right now | `ib-account-overview` → `/ib-account-overview` |
 | List every position, ranked, with the most concentrated name | `ib-positions-overview` → `/ib-positions-overview` |
 | See how the account did today and which names drove it | `ib-daily-pnl` → `/ib-daily-pnl` |
+| List historical fills, commission, realized P&L and win/loss statistics | `ib-trade-history` → `/ib-trade-history` |
+| Configure Flex credentials for trade history | `ib-trade-history` → `/ib-trade-history` setup |
 | Produce a diagnostic report from existing data | `ib-portfolio-analyst` → `/ib-analyze` |
 | Test either skill without IB | its `tests/` fixtures (see §5) |
 
@@ -169,6 +175,10 @@ output paths) to stdout and return non-zero on failure:
 # ingest
 {baseDir}/.venv/bin/python {baseDir}/ib-gateway/scripts/ib_sync.py --config .ib-suite/config.yaml
 
+# historical Flex executions (default: latest 7 calendar days)
+{baseDir}/.venv/bin/python {baseDir}/ib-trade-history/scripts/trade_history.py \
+  --config .ib-suite/config.yaml
+
 # analyze (bars/executions/dividends optional)
 {baseDir}/.venv/bin/python {baseDir}/ib-portfolio-analyst/scripts/analyze.py \
   --config .ib-suite/config.yaml \
@@ -177,5 +187,7 @@ output paths) to stdout and return non-zero on failure:
 ```
 
 **As a library.** `import ib_common` (installed editable) for config/schema/
-storage/metrics/charts. Secrets are passed via environment only — e.g. the Flex
-token as `$FLEX_TOKEN`; never hardcode tokens, account numbers, or user paths.
+storage/metrics/charts. `ib-trade-history` can configure its Flex credential
+pair in ignored local config; a complete `FLEX_TOKEN` and `FLEX_QUERY_ID`
+environment pair is only a compatibility fallback. Never hardcode or echo
+tokens, account numbers, or user paths.

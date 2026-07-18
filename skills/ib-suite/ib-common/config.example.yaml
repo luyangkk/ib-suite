@@ -10,6 +10,9 @@ data:
   base_currency: null # null => follow the IB account BASE currency
 storage:
   root: .ib-suite/data   # keep runtime data out of the skill dir (workspace-local)
+flex:
+  token: null       # workspace-local secret; never commit a real value
+  query_id: null    # IBKR Flex Query ID
 thresholds:
   # account_health: cash buffer (lower is riskier) and gross leverage
   cash_ratio_warn: 0.10               # P2 when cash < 10% of net liquidation
