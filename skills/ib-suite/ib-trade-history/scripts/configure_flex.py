@@ -1,4 +1,4 @@
-"""Safely persist a local IBKR Flex credential pair in config.yaml."""
+"""Safely persist local IBKR Flex credentials and window map in config.yaml."""
 from __future__ import annotations
 
 import argparse
@@ -17,12 +17,32 @@ from ib_common.config import load_config
 _CONFIG_ERROR = "configuration could not be read or validated; repair config.yaml and retry"
 
 
+def parse_window(spec: str) -> tuple[int, str]:
+    """Parse a '<days>=<query-id>' window spec into (days, query_id)."""
+    days_text, sep, query_id = spec.partition("=")
+    if not sep or not days_text.strip() or not query_id.strip():
+        raise ValueError("window must use the format <days>=<id>, e.g. 7=1575544")
+    try:
+        days = int(days_text.strip())
+    except ValueError:
+        raise ValueError("window must use the format <days>=<id>, e.g. 7=1575544") from None
+    if days <= 0:
+        raise ValueError("window must use the format <days>=<id>, e.g. 7=1575544")
+    return days, query_id.strip()
+
+
 def configure_flex(
-    config_path: str | Path, token: str, query_id: str, force: bool = False
+    config_path: str | Path,
+    token: str | None = None,
+    windows: Mapping[int, str] | None = None,
+    force: bool = False,
 ) -> dict:
-    """Persist both Flex credentials, preserving comments and rejecting replacement."""
-    if not token.strip() or not query_id.strip():
-        raise ValueError("Flex token and query ID must not be blank")
+    """Persist a Flex token and/or window map, preserving comments safely."""
+    windows = dict(windows or {})
+    if token is not None and not token.strip():
+        raise ValueError("Flex token must not be blank")
+    if token is None and not windows:
+        raise ValueError("provide a token or at least one window")
 
     path = Path(config_path)
     if not path.exists():
@@ -45,37 +65,55 @@ def configure_flex(
     flex = doc.get("flex")
     if flex is not None and not isinstance(flex, Mapping):
         raise ValueError(_CONFIG_ERROR)
-    if not force and (
-        flex is not None
-        and (flex.get("token") is not None or flex.get("query_id") is not None)
-    ):
-        raise FileExistsError(
-            "Flex credentials already exist; pass --force to replace both values"
-        )
-
     if flex is None:
         doc["flex"] = {}
-    doc["flex"]["token"] = token
-    doc["flex"]["query_id"] = query_id
+        flex = doc["flex"]
+
+    existing = flex.get("query_ids")
+    if existing is not None and not isinstance(existing, Mapping):
+        raise ValueError(_CONFIG_ERROR)
+
+    if not force:
+        if token is not None and flex.get("token") is not None:
+            raise FileExistsError(
+                "Flex token already exists; pass --force to replace it"
+            )
+        clashes = [d for d in windows if existing and d in existing]
+        if clashes:
+            raise FileExistsError(
+                f"Flex windows already exist for {sorted(clashes)}; pass --force to replace"
+            )
+
+    # Retire the legacy single-value key.
+    if "query_id" in flex:
+        del flex["query_id"]
+
+    if token is not None:
+        flex["token"] = token
+    if windows:
+        merged = dict(existing or {})
+        merged.update(windows)
+        flex["query_ids"] = {d: merged[d] for d in sorted(merged)}
 
     temporary_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
+            mode="w", encoding="utf-8", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
         ) as file:
             temporary_path = Path(file.name)
             yaml.dump(doc, file)
 
         config = load_config(temporary_path)
-        if config.flex.token != token or config.flex.query_id != query_id:
-            raise ValueError("staged Flex credentials did not reload exactly")
+        if token is not None and config.flex.token != token:
+            raise ValueError("staged Flex token did not reload exactly")
+        for day, query_id in windows.items():
+            if config.flex.query_ids.get(day) != query_id:
+                raise ValueError("staged Flex windows did not reload exactly")
         os.replace(temporary_path, path)
         temporary_path = None
+    except FileExistsError:
+        raise
     except Exception:
         raise ValueError(_CONFIG_ERROR) from None
     finally:
@@ -91,14 +129,18 @@ def main() -> None:
         description="Persist local IBKR Flex credentials for the read-only trade-history skill"
     )
     parser.add_argument("--config", required=True, help="path to config.yaml")
-    parser.add_argument("--token", required=True, help="IBKR Flex token")
-    parser.add_argument("--query-id", required=True, help="IBKR Flex Query ID")
+    parser.add_argument("--token", help="IBKR Flex token")
     parser.add_argument(
-        "--force", action="store_true", help="replace an existing Flex credential pair"
+        "--window", action="append", default=[],
+        help="window spec '<days>=<query-id>', repeatable",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="replace an existing token or window"
     )
     args = parser.parse_args()
     try:
-        result = configure_flex(args.config, args.token, args.query_id, args.force)
+        windows = dict(parse_window(spec) for spec in args.window)
+        result = configure_flex(args.config, args.token, windows, args.force)
     except (FileExistsError, FileNotFoundError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(result))
