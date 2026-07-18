@@ -41,6 +41,31 @@ def resolve_period(start: str | None, end: str | None, today: date) -> tuple[dat
     return start_date, end_date
 
 
+def select_flex_window(
+    query_ids: dict[int, str], start_date: date, today: date
+) -> tuple[int, str, str | None]:
+    """Pick the smallest configured window that still reaches start_date.
+
+    gap counts today inclusively. When the request predates every window, use
+    the largest and return a coverage note instead of dropping data or failing.
+    """
+    if not query_ids:
+        raise ValueError(
+            "no Flex windows configured; run configure_flex.py with --window"
+        )
+    gap = (today - start_date).days + 1
+    covering = sorted(days for days in query_ids if days >= gap)
+    if covering:
+        chosen = covering[0]
+        return chosen, query_ids[chosen], None
+    largest = max(query_ids)
+    note = (
+        f"requested start date precedes the largest configured Flex window "
+        f"({largest} days); results may be incomplete"
+    )
+    return largest, query_ids[largest], note
+
+
 def resolve_flex_credentials(cfg: Config, environ: Mapping[str, str]) -> tuple[str, str]:
     """Return one complete Flex credential pair from config or environment."""
     config_pair = (cfg.flex.token, cfg.flex.query_id)
