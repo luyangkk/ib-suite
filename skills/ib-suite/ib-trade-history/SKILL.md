@@ -16,37 +16,37 @@ cancel orders; do not start IB Gateway; do not write trade data to the lake.
 
 ## Prerequisites
 
-Configure the Flex Query `Trades` section to include `dateTime`, `tradeID`,
-`symbol`, `buySell`, `quantity`, `tradePrice`, `ibCommission`, `currency`,
-`ibCommissionCurrency`, `multiplier`, `orderType`, `exchange`,
-`openCloseIndicator`, `fifoPnlRealized`, and `fxRateToBase`. Its configured
-history window must cover the requested dates.
+Build one Flex Query per lookback window you need in IBKR. The field
+requirements are unchanged: every query's `Trades` section must include
+`dateTime`, `tradeID`, `symbol`, `buySell`, `quantity`, `tradePrice`,
+`ibCommission`, `currency`, `ibCommissionCurrency`, `multiplier`, `orderType`,
+`exchange`, `openCloseIndicator`, `fifoPnlRealized`, and `fxRateToBase`. Each
+query's history window must cover the days it is registered for.
 
-Set `data.base_currency` in `.ib-suite/config.yaml`. Before running
-`/ib-trade-history`, check the local `flex.token` and `flex.query_id` fields
-without exposing either value. When both fields are present, use the stored pair.
-When neither field is present, ask the user for both the Flex token and Query ID,
-then run:
-
-```bash
-{baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \
-  --config .ib-suite/config.yaml --token '<provided-token>' --query-id '<provided-query-id>'
-```
-
-When exactly one field is present, ask for both values again and explicitly
-replace the incomplete pair:
+Set `data.base_currency` in `.ib-suite/config.yaml`. Credentials come only from
+`flex.token` and the `flex.query_ids` map (days -> Query ID) in that local
+config; there is no environment-variable fallback. Before running
+`/ib-trade-history`, check those fields without exposing any value. To register
+a window, ask the user for the Flex token and the matching Query ID, then run
+(repeat `--window` for each window you register):
 
 ```bash
 {baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \
-  --config .ib-suite/config.yaml --token '<provided-token>' --query-id '<provided-query-id>' \
-  --force
+  --config .ib-suite/config.yaml --token '<provided-token>' \
+  --window '7=<query-id>'
 ```
+
+Adding a brand-new window does not need `--force`. Overwriting an existing
+`flex.token` or replacing a window whose days-key is already present requires
+`--force`; without it the tool refuses and leaves the config untouched.
 
 This setup persists plaintext credentials only in the ignored local config,
 validates only local persistence, does not validate against the Flex Web Service,
-and never echoes values. The runtime accepts only one complete credential pair:
-local config takes precedence; otherwise it falls back to both `FLEX_TOKEN` and
-`FLEX_QUERY_ID` environment variables. Never mix credential sources.
+and never echoes values.
+
+The runtime picks the smallest configured window whose day count is greater
+than or equal to the requested lookback (counting today); requests older than
+the largest configured window use it and add a `coverage_note`.
 
 ## Command
 

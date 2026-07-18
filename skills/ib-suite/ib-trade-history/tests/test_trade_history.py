@@ -232,7 +232,8 @@ def test_skill_metadata_and_source_preserve_read_only_boundary():
     assert "name: ib-trade-history" in skill
     assert "Read-only" in skill
     assert "{baseDir}/../.venv/bin/python {baseDir}/scripts/trade_history.py" in skill
-    assert "FLEX_TOKEN" in skill and "FLEX_QUERY_ID" in skill
+    assert "--window" in skill
+    assert "query_ids" in skill
     assert "env: [FLEX_TOKEN, FLEX_QUERY_ID]" not in skill
     assert (
         "{baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py" in skill
@@ -246,19 +247,17 @@ def test_skill_metadata_and_source_preserve_read_only_boundary():
         assert forbidden not in source
 
 
-def test_skill_guides_safe_partial_flex_credential_recovery():
-    """Partial local credentials require explicit replacement, unlike an empty config."""
+def test_skill_guides_window_registration_and_force_replacement():
+    """The skill shows how to register windows and force replacements."""
     skill = (Path(__file__).parent.parent / "SKILL.md").read_text(encoding="utf-8")
-    configure = (
+    register = (
         "{baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \\\n"
-        "  --config .ib-suite/config.yaml --token '<provided-token>' "
-        "--query-id '<provided-query-id>'"
+        "  --config .ib-suite/config.yaml --token '<provided-token>' \\\n"
+        "  --window '7=<query-id>'"
     )
-
-    assert "When neither field is present" in skill
-    assert configure in skill
-    assert "When exactly one field is present" in skill
-    assert f"{configure} \\\n  --force" in skill
+    assert register in skill
+    assert "--force" in skill
+    assert "smallest configured window" in skill
 
 
 def test_orchestration_redacts_request_exception_secrets(tmp_path):
