@@ -41,28 +41,30 @@ def resolve_period(start: str | None, end: str | None, today: date) -> tuple[dat
 
 
 def select_flex_window(
-    query_ids: dict[int, str], start_date: date, today: date
+    query_ids: dict[str, str], start_date: date, today: date
 ) -> tuple[int, str, str | None]:
-    """Pick the smallest configured window that still reaches start_date.
+    """Pick the smallest configured numeric-day window that reaches start_date.
 
+    Only digit keys participate; 'mtd'/'ytd' are handled by the period path.
     gap counts today inclusively. When the request predates every window, use
     the largest and return a coverage note instead of dropping data or failing.
     """
-    if not query_ids:
+    numeric = {int(k): v for k, v in query_ids.items() if k.isdigit()}
+    if not numeric:
         raise ValueError(
             "no Flex windows configured; run configure_flex.py with --window"
         )
     gap = (today - start_date).days + 1
-    covering = sorted(days for days in query_ids if days >= gap)
+    covering = sorted(days for days in numeric if days >= gap)
     if covering:
         chosen = covering[0]
-        return chosen, query_ids[chosen], None
-    largest = max(query_ids)
+        return chosen, numeric[chosen], None
+    largest = max(numeric)
     note = (
         f"requested start date precedes the largest configured Flex window "
         f"({largest} days); results may be incomplete"
     )
-    return largest, query_ids[largest], note
+    return largest, numeric[largest], note
 
 
 def resolve_flex_token(cfg: Config) -> str:

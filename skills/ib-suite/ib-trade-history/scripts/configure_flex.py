@@ -17,28 +17,25 @@ from ib_common.config import load_config
 _CONFIG_ERROR = "configuration could not be read or validated; repair config.yaml and retry"
 
 
-def parse_window(spec: str) -> tuple[int, str]:
-    """Parse a '<days>=<query-id>' window spec into (days, query_id)."""
+def parse_window(spec: str) -> tuple[str, str]:
+    """Parse a '<days>=<query-id>' window spec into (day-string, query_id)."""
     days_text, sep, query_id = spec.partition("=")
-    if not sep or not days_text.strip() or not query_id.strip():
+    key = days_text.strip()
+    if not sep or not key or not query_id.strip():
         raise ValueError("window must use the format <days>=<id>, e.g. 7=1575544")
-    try:
-        days = int(days_text.strip())
-    except ValueError:
-        raise ValueError("window must use the format <days>=<id>, e.g. 7=1575544") from None
-    if days <= 0:
+    if not key.isdigit() or int(key) <= 0:
         raise ValueError("window must use the format <days>=<id>, e.g. 7=1575544")
-    return days, query_id.strip()
+    return key, query_id.strip()
 
 
 def configure_flex(
     config_path: str | Path,
     token: str | None = None,
-    windows: Mapping[int, str] | None = None,
+    windows: Mapping[str, str] | None = None,
     force: bool = False,
 ) -> dict:
     """Persist a Flex token and/or window map, preserving comments safely."""
-    windows = dict(windows or {})
+    windows = {str(day): qid for day, qid in dict(windows or {}).items()}
     if token is not None and not token.strip():
         raise ValueError("Flex token must not be blank")
     if token is None and not windows:
@@ -72,13 +69,14 @@ def configure_flex(
     existing = flex.get("query_ids")
     if existing is not None and not isinstance(existing, Mapping):
         raise ValueError(_CONFIG_ERROR)
+    existing_norm = {str(day): qid for day, qid in dict(existing or {}).items()}
 
     if not force:
         if token is not None and flex.get("token") is not None:
             raise FileExistsError(
                 "Flex token already exists; pass --force to replace it"
             )
-        clashes = [d for d in windows if existing and d in existing]
+        clashes = [day for day in windows if day in existing_norm]
         if clashes:
             raise FileExistsError(
                 f"Flex windows already exist for {sorted(clashes)}; pass --force to replace"
@@ -87,9 +85,10 @@ def configure_flex(
     if token is not None:
         flex["token"] = token
     if windows:
-        merged = dict(existing or {})
+        merged = dict(existing_norm)
         merged.update(windows)
-        flex["query_ids"] = {d: merged[d] for d in sorted(merged)}
+        ordered = sorted(merged, key=lambda k: (0, int(k)) if k.isdigit() else (1, k))
+        flex["query_ids"] = {k: merged[k] for k in ordered}
 
     temporary_path: Path | None = None
     try:

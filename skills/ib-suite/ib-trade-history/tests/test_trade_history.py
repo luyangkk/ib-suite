@@ -436,7 +436,7 @@ def test_main_redacts_request_exception_secrets(monkeypatch, capsys, tmp_path):
 def test_select_flex_window_rounds_up_to_smallest_covering_window():
     """A 7-day gap picks the 7 window when 7 and 30 are configured."""
     days, query_id, note = trade_history.select_flex_window(
-        {7: "q7", 30: "q30"}, date(2026, 7, 12), date(2026, 7, 18)
+        {"7": "q7", "30": "q30"}, date(2026, 7, 12), date(2026, 7, 18)
     )
     assert (days, query_id, note) == (7, "q7", None)
 
@@ -444,7 +444,7 @@ def test_select_flex_window_rounds_up_to_smallest_covering_window():
 def test_select_flex_window_includes_today_in_gap():
     """Gap counts today inclusively, so same-day requests need at least 1 day."""
     days, query_id, note = trade_history.select_flex_window(
-        {1: "q1", 30: "q30"}, date(2026, 7, 18), date(2026, 7, 18)
+        {"1": "q1", "30": "q30"}, date(2026, 7, 18), date(2026, 7, 18)
     )
     assert (days, query_id, note) == (1, "q1", None)
 
@@ -452,7 +452,7 @@ def test_select_flex_window_includes_today_in_gap():
 def test_select_flex_window_rounds_up_when_no_exact_match():
     """A 10-day gap with only 7 and 30 configured selects 30."""
     days, query_id, note = trade_history.select_flex_window(
-        {7: "q7", 30: "q30"}, date(2026, 7, 9), date(2026, 7, 18)
+        {"7": "q7", "30": "q30"}, date(2026, 7, 9), date(2026, 7, 18)
     )
     assert (days, query_id, note) == (30, "q30", None)
 
@@ -460,11 +460,27 @@ def test_select_flex_window_rounds_up_when_no_exact_match():
 def test_select_flex_window_falls_back_to_largest_with_note():
     """A request beyond the largest window uses it and flags possible gaps."""
     days, query_id, note = trade_history.select_flex_window(
-        {7: "q7", 30: "q30"}, date(2026, 1, 1), date(2026, 7, 18)
+        {"7": "q7", "30": "q30"}, date(2026, 1, 1), date(2026, 7, 18)
     )
     assert days == 30
     assert query_id == "q30"
     assert note is not None and "30" in note
+
+
+def test_select_flex_window_ignores_period_keys():
+    """Period keys never participate in numeric-day auto-selection."""
+    days, query_id, note = trade_history.select_flex_window(
+        {"7": "q7", "mtd": "qm", "ytd": "qy"}, date(2026, 7, 12), date(2026, 7, 18)
+    )
+    assert (days, query_id, note) == (7, "q7", None)
+
+
+def test_select_flex_window_rejects_period_only_map():
+    """A map with no numeric windows is an actionable configuration error."""
+    with pytest.raises(ValueError, match="--window"):
+        trade_history.select_flex_window(
+            {"mtd": "qm"}, date(2026, 7, 12), date(2026, 7, 18)
+        )
 
 
 def test_select_flex_window_rejects_empty_map():

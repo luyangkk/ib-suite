@@ -41,15 +41,33 @@ def test_flex_config_defaults_to_empty_credentials():
     assert cfg.flex.query_ids == {}
 
 
-def test_flex_query_ids_parsed_as_int_keyed_map(tmp_path):
-    """Window days become integer keys mapping to Flex Query IDs."""
+def test_flex_query_ids_parsed_as_string_keyed_map(tmp_path):
+    """Window keys load as strings; YAML integer keys coerce to digit strings."""
     path = tmp_path / "config.yaml"
     path.write_text(
-        "flex:\n  token: t\n  query_ids:\n    7: q7\n    30: q30\n",
+        "flex:\n  token: t\n  query_ids:\n    7: q7\n    30: q30\n"
+        "    mtd: qm\n    ytd: qy\n",
         encoding="utf-8",
     )
     cfg = load_config(path)
-    assert cfg.flex.query_ids == {7: "q7", 30: "q30"}
+    assert cfg.flex.query_ids == {"7": "q7", "30": "q30", "mtd": "qm", "ytd": "qy"}
+
+
+def test_flex_query_ids_reject_unknown_string_key(tmp_path):
+    """A non-period, non-numeric key is a configuration error, not a silent typo."""
+    path = tmp_path / "config.yaml"
+    path.write_text("flex:\n  query_ids:\n    foo: x\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid Flex window key"):
+        load_config(path)
+
+
+@pytest.mark.parametrize("bad", ["0", "-3"])
+def test_flex_query_ids_reject_nonpositive_day_key(tmp_path, bad):
+    """Numeric day keys must be strictly positive."""
+    path = tmp_path / "config.yaml"
+    path.write_text(f"flex:\n  query_ids:\n    '{bad}': x\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid Flex window key"):
+        load_config(path)
 
 
 def test_options_market_data_defaults_to_disabled():

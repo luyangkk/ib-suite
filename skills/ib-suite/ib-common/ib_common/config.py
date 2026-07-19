@@ -7,7 +7,7 @@ defaults defined here (read-only, paper port, 24h freshness).
 from __future__ import annotations
 from pathlib import Path
 from ruamel.yaml import YAML
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ConnectionCfg(BaseModel):
@@ -30,8 +30,26 @@ class StorageCfg(BaseModel):
 class FlexCfg(BaseModel):
     """Workspace-local IBKR Flex credentials for the trade-history skill."""
 
+    # YAML integer window keys (e.g. `7:`) load as ints; coerce them to the
+    # digit strings the model and validator expect.
+    model_config = ConfigDict(coerce_numbers_to_str=True)
+
     token: str | None = None
-    query_ids: dict[int, str] = Field(default_factory=dict)
+    query_ids: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("query_ids")
+    @classmethod
+    def _validate_window_keys(cls, value: dict[str, str]) -> dict[str, str]:
+        """Keys are positive-integer day counts or the periods 'mtd'/'ytd'."""
+        for key in value:
+            if key in ("mtd", "ytd"):
+                continue
+            if not key.isdigit() or int(key) <= 0:
+                raise ValueError(
+                    f"invalid Flex window key {key!r}; use a positive day count "
+                    "or 'mtd'/'ytd'"
+                )
+        return value
 
 
 class OptionsCfg(BaseModel):

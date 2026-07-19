@@ -27,7 +27,7 @@ def load_module() -> object:
 def test_parse_window_accepts_days_equals_id():
     """A window spec maps an integer day count to a Query ID."""
     configure_flex = load_module()
-    assert configure_flex.parse_window("7=q7") == (7, "q7")
+    assert configure_flex.parse_window("7=q7") == ("7", "q7")
 
 
 @pytest.mark.parametrize("spec", ["7", "=q7", "x=q7", "7=", "0=q7", "-3=q7"])
@@ -49,7 +49,7 @@ def test_configure_flex_writes_token_and_windows(tmp_path):
     cfg = load_config(path)
     assert result == {"config": str(path), "ready": True}
     assert cfg.flex.token == "t"
-    assert cfg.flex.query_ids == {7: "q7"}
+    assert cfg.flex.query_ids == {"7": "q7"}
     assert "# keep" in path.read_text(encoding="utf-8")
     assert "q7" not in str(result)  # result carries no secret query id
 
@@ -62,7 +62,7 @@ def test_configure_flex_merges_new_window_without_force(tmp_path):
 
     configure_flex.configure_flex(path, windows={30: "q30"})
 
-    assert load_config(path).flex.query_ids == {7: "q7", 30: "q30"}
+    assert load_config(path).flex.query_ids == {"7": "q7", "30": "q30"}
 
 
 def test_configure_flex_overwriting_window_requires_force(tmp_path):
@@ -75,7 +75,7 @@ def test_configure_flex_overwriting_window_requires_force(tmp_path):
         configure_flex.configure_flex(path, windows={7: "q7-new"})
 
     configure_flex.configure_flex(path, windows={7: "q7-new"}, force=True)
-    assert load_config(path).flex.query_ids == {7: "q7-new"}
+    assert load_config(path).flex.query_ids == {"7": "q7-new"}
 
 
 def test_configure_flex_overwriting_token_requires_force(tmp_path):
@@ -154,4 +154,4 @@ def test_cli_writes_windows_and_never_echoes_values(tmp_path):
     assert json.loads(ok.stdout) == {"config": str(path), "ready": True}
     assert token not in ok.stdout + ok.stderr
     assert qid not in ok.stdout + ok.stderr
-    assert load_config(path).flex.query_ids == {7: qid}
+    assert load_config(path).flex.query_ids == {"7": qid}
