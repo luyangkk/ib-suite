@@ -52,6 +52,25 @@ def test_parse_flex_trade_records_keeps_required_trade_history_fields():
     assert option.notional == 200.0
 
 
+def test_parse_flex_trade_records_accepts_present_empty_order_type():
+    """IBKR assignment rows may carry an explicitly empty orderType."""
+    xml_text = (FIX / "flex_response_sample.xml").read_text(encoding="utf-8")
+    xml_text = xml_text.replace('orderType="LMT"', 'orderType=""', 1)
+
+    rows = flex.parse_flex_trade_records(xml_text)
+
+    assert rows[0].order_type == ""
+
+
+def test_parse_flex_trade_records_rejects_absent_order_type():
+    """Omitting orderType from the query remains an actionable error."""
+    xml_text = (FIX / "flex_response_sample.xml").read_text(encoding="utf-8")
+    xml_text = xml_text.replace(' orderType="LMT"', "", 1)
+
+    with pytest.raises(ValueError, match="orderType.*Flex Query Trades"):
+        flex.parse_flex_trade_records(xml_text)
+
+
 def test_parse_flex_trade_records_rejects_non_positive_multiplier():
     """Flex multipliers must be positive when a contract supplies one."""
     xml_text = (FIX / "flex_response_sample.xml").read_text(encoding="utf-8")

@@ -66,6 +66,16 @@ def _required(trade: ET.Element, name: str) -> str:
     return value
 
 
+def _present(trade: ET.Element, name: str) -> str:
+    """Return an attribute that may be empty, rejecting an omitted query field."""
+    value = trade.get(name)
+    if value is None:
+        raise ValueError(
+            f"Flex Trade field {name!r} is missing; enable it in the Flex Query Trades section"
+        )
+    return value
+
+
 def parse_flex_trade_records(xml_text: str) -> list[FlexTrade]:
     """Extract complete Flex execution rows for the trade-history skill."""
     root = ET.fromstring(xml_text)
@@ -84,7 +94,7 @@ def parse_flex_trade_records(xml_text: str) -> list[FlexTrade]:
             currency=_required(trade, "currency").upper(),
             commission_currency=_required(trade, "ibCommissionCurrency").upper(),
             multiplier=float(multiplier_text) if multiplier_text else 1.0,
-            order_type=_required(trade, "orderType"),
+            order_type=_present(trade, "orderType"),
             exchange=_required(trade, "exchange"),
             open_close=(trade.get("openCloseIndicator") or "").upper(),
             realized_pnl=float(_required(trade, "fifoPnlRealized")),
