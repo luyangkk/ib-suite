@@ -12,7 +12,7 @@ storage:
   root: .ib-suite/data   # keep runtime data out of the skill dir (workspace-local)
 flex:
   token: null       # workspace-local secret; never commit a real value
-  query_ids: {}     # days -> IBKR Flex Query ID, e.g. {7: "1575544", 30: "1580001"}
+  query_ids: {}     # keys: day count or 'mtd'/'ytd' -> Flex Query ID, e.g. {"7": "1575544", ytd: "1590003"}
 options:
   # false (default): skip all option market-data requests — no Greeks/IV, but
   # zero snapshot-fee risk. Position, price, market value and P&L still work

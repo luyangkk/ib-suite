@@ -36,6 +36,15 @@ a window, ask the user for the Flex token and the matching Query ID, then run
   --window '7=<query-id>'
 ```
 
+Register month-to-date and year-to-date windows the same way, using `mtd`/`ytd`
+in place of a day count:
+
+```bash
+{baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \
+  --config .ib-suite/config.yaml --token '<provided-token>' \
+  --window 'mtd=<query-id>' --window 'ytd=<query-id>'
+```
+
 Adding a brand-new window does not need `--force`. Overwriting an existing
 `flex.token` or replacing a window whose days-key is already present requires
 `--force`; without it the tool refuses and leaves the config untouched.
@@ -67,9 +76,20 @@ calendar days:
   --config .ib-suite/config.yaml
 ```
 
-Interpret "this month" as the first day of the current month through today;
-interpret "last month" as the previous calendar month; ask one clarifying
-question for ambiguous phrases such as "recently".
+For month-to-date or year-to-date, use `--period` (mutually exclusive with the
+date arguments):
+
+```bash
+{baseDir}/../.venv/bin/python {baseDir}/scripts/trade_history.py \
+  --config .ib-suite/config.yaml --period mtd
+```
+
+Interpret "this month" / "month to date" as `--period mtd`, and "this year" /
+"year to date" as `--period ytd`. If the matching `mtd`/`ytd` window is not
+registered, the runtime falls back to the numeric windows and adds a
+`coverage_note`. Interpret "last month" as the previous calendar month via
+`--start-date`/`--end-date`; ask one clarifying question for ambiguous phrases
+such as "recently".
 
 The script prints one JSON object with `trades` and `summary`. Each fill keeps
 its original currency; notional includes the Flex contract multiplier. `FIFO

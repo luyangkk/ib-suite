@@ -233,6 +233,8 @@ def test_skill_metadata_and_source_preserve_read_only_boundary():
     assert "Read-only" in skill
     assert "{baseDir}/../.venv/bin/python {baseDir}/scripts/trade_history.py" in skill
     assert "--window" in skill
+    assert "--period" in skill
+    assert "ytd" in skill
     assert "query_ids" in skill
     assert "env: [FLEX_TOKEN, FLEX_QUERY_ID]" not in skill
     assert (
