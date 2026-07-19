@@ -391,7 +391,7 @@ def test_orchestration_rejects_invalid_flex_xml_without_parser_details(tmp_path)
 def test_main_prints_one_json_line_on_success(monkeypatch, capsys):
     """The CLI emits exactly one JSON object and no stderr on success."""
     expected = {"trades": [], "summary": {}}
-    monkeypatch.setattr(trade_history, "trade_history", lambda *_: expected)
+    monkeypatch.setattr(trade_history, "trade_history", lambda *_, **__: expected)
     monkeypatch.setattr(sys, "argv", ["trade_history.py", "--config", "config.yaml"])
 
     trade_history.main()
@@ -418,7 +418,7 @@ def test_main_redacts_request_exception_secrets(monkeypatch, capsys, tmp_path):
         )
 
     monkeypatch.setattr(
-        trade_history.trade_history, "__defaults__", (failed_fetch, None)
+        trade_history.trade_history, "__defaults__", (failed_fetch, None, None)
     )
     monkeypatch.setattr(sys, "argv", ["trade_history.py", "--config", str(config)])
 
@@ -520,3 +520,67 @@ def test_select_period_window_falls_back_to_numeric_pool_with_note():
     )
     assert query_id == "q7"
     assert note is not None and "30" not in note  # note is from select_flex_window
+
+
+def test_orchestration_period_fetches_and_clips(tmp_path):
+    """--period mtd fetches the period's query id and clips to month-to-date."""
+    xml = (Path(__file__).parent / "fixtures" / "flex_trade_history_sample.xml").read_text()
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "data:\n  base_currency: USD\nflex:\n  token: t\n"
+        "  query_ids:\n    7: q7\n    mtd: qm\n",
+        encoding="utf-8",
+    )
+    calls = []
+
+    def fake_fetch(token: str, query_id: str) -> str:
+        calls.append((token, query_id))
+        return xml
+
+    out = trade_history.trade_history(
+        str(config), None, None, fetcher=fake_fetch,
+        today=date(2026, 7, 11), period="mtd",
+    )
+    assert calls == [("t", "qm")]
+    assert out["start_date"] == "2026-07-01"
+    assert out["end_date"] == "2026-07-11"
+    assert out["coverage_note"] is None
+
+
+def test_orchestration_period_rejects_explicit_dates(tmp_path):
+    """--period cannot be combined with explicit start/end dates."""
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "data:\n  base_currency: USD\nflex:\n  token: t\n  query_ids:\n    mtd: qm\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="cannot be combined"):
+        trade_history.trade_history(
+            str(config), "2026-07-01", "2026-07-11",
+            fetcher=lambda *_: "<FlexQueryResponse/>",
+            today=date(2026, 7, 11), period="mtd",
+        )
+
+
+def test_orchestration_period_redacts_fetch_failure(tmp_path):
+    """On the period path, a fetch failure leaks neither token nor query id."""
+    token, query_id = "period-token", "period-query"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"data:\n  base_currency: USD\nflex:\n  token: {token}\n"
+        f"  query_ids:\n    ytd: {query_id}\n",
+        encoding="utf-8",
+    )
+
+    def failed_fetch(_: str, __: str) -> str:
+        raise requests.RequestException(f"GET ?q={query_id} failed")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        trade_history.trade_history(
+            str(config), None, None, fetcher=failed_fetch,
+            today=date(2026, 7, 19), period="ytd",
+        )
+    message = str(excinfo.value)
+    formatted = "".join(traceback.format_exception(excinfo.value))
+    assert "Flex report retrieval failed" in message
+    assert token not in formatted and query_id not in formatted

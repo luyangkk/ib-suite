@@ -203,8 +203,13 @@ def trade_history(
     end: str | None,
     fetcher: Callable[[str, str], str] = fetch_flex_report,
     today: date | None = None,
+    period: str | None = None,
 ) -> dict:
     """Fetch Flex trades once and return a JSON-safe inclusive-period report."""
+    if period is not None and (start is not None or end is not None):
+        raise ValueError(
+            "--period cannot be combined with --start-date/--end-date"
+        )
     cfg = load_config(config_path)
     base_currency = (cfg.data.base_currency or "").upper()
     if not base_currency:
@@ -214,10 +219,16 @@ def trade_history(
         )
     token = resolve_flex_token(cfg)
     resolved_today = today or date.today()
-    start_date, end_date = resolve_period(start, end, resolved_today)
-    _, query_id, coverage_note = select_flex_window(
-        cfg.flex.query_ids, start_date, resolved_today
-    )
+    if period is not None:
+        start_date, end_date = resolve_period_bounds(period, resolved_today)
+        query_id, coverage_note = select_period_window(
+            cfg.flex.query_ids, period, resolved_today
+        )
+    else:
+        start_date, end_date = resolve_period(start, end, resolved_today)
+        _, query_id, coverage_note = select_flex_window(
+            cfg.flex.query_ids, start_date, resolved_today
+        )
     try:
         xml_text = fetcher(token, query_id)
     except (requests.RequestException, RuntimeError, ET.ParseError, ValueError):
@@ -242,9 +253,15 @@ def main() -> None:
     parser.add_argument("--config", required=True, help="path to config.yaml")
     parser.add_argument("--start-date", help="inclusive YYYY-MM-DD start date")
     parser.add_argument("--end-date", help="inclusive YYYY-MM-DD end date")
+    parser.add_argument(
+        "--period", choices=["mtd", "ytd"],
+        help="month-to-date or year-to-date; mutually exclusive with --start-date/--end-date",
+    )
     args = parser.parse_args()
     try:
-        print(json.dumps(trade_history(args.config, args.start_date, args.end_date)))
+        print(json.dumps(
+            trade_history(args.config, args.start_date, args.end_date, period=args.period)
+        ))
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         parser.error(str(exc))
 
