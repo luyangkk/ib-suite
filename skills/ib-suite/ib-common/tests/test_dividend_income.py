@@ -159,6 +159,39 @@ def _position(
     )
 
 
+def _two_dividends_one_withholding_dataset(
+    *, include_position: bool = False
+) -> FlexDividendDataset:
+    """Build two realized events competing for one withholding cash posting."""
+    return _dataset(
+        cash=[
+            _cash(payment_date=date(2026, 7, 15), trade_id="DIVIDEND1"),
+            _cash(payment_date=date(2026, 7, 16), trade_id="DIVIDEND2"),
+            _cash(
+                amount=-3.75,
+                transaction_type="Withholding Tax",
+                payment_date=date(2026, 7, 15),
+                trade_id="TAX1",
+            ),
+        ],
+        accruals=[
+            _accrual(
+                ex_date=date(2026, 7, 8),
+                pay_date=date(2026, 7, 15),
+                tax=None,
+                net=None,
+            ),
+            _accrual(
+                ex_date=date(2026, 7, 9),
+                pay_date=date(2026, 7, 16),
+                tax=None,
+                net=None,
+            ),
+        ],
+        positions=[_position()] if include_position else [],
+    )
+
+
 def test_reconcile_realized_and_expected_dividends() -> None:
     """A posted dividend is realized while a different open accrual is expected."""
     dataset = _dataset(
@@ -442,6 +475,62 @@ def test_reconcile_delayed_positive_reversal_cancels_original_cash_posting() -> 
     assert report.realized_dividends == []
 
 
+def test_reconcile_recurring_reversal_prefers_older_matching_trade_id() -> None:
+    """A targeted reversal cancels its older trade, not a newer equal dividend."""
+    dataset = _dataset(
+        cash=[
+            _cash(
+                payment_date=date(2026, 6, 15),
+                trade_id="OLDER",
+            ),
+            _cash(
+                payment_date=date(2026, 7, 15),
+                trade_id="NEWER",
+            ),
+            _cash(
+                payment_date=date(2026, 7, 20),
+                trade_id="OLDER",
+                code="RE",
+            ),
+        ],
+        accruals=[_accrual(pay_date=date(2026, 7, 15))],
+    )
+
+    report = build_dividend_income_report(
+        dataset, date(2026, 7, 1), date(2026, 7, 31)
+    )
+
+    assert [row.payment_date for row in report.realized_dividends] == [
+        date(2026, 7, 15)
+    ]
+    assert report.realized_dividends[0].gross == 25.0
+
+
+def test_reconcile_ambiguous_no_id_reversal_preserves_recurring_dividends() -> None:
+    """A no-ID reversal preserves equal candidates and discloses its ambiguity."""
+    dataset = _dataset(
+        cash=[
+            _cash(payment_date=date(2026, 6, 15)),
+            _cash(payment_date=date(2026, 7, 15)),
+            _cash(payment_date=date(2026, 7, 20), code="RE"),
+        ],
+        accruals=[_accrual(pay_date=date(2026, 7, 15))],
+    )
+
+    report = build_dividend_income_report(
+        dataset, date(2026, 7, 1), date(2026, 7, 31)
+    )
+
+    assert [row.payment_date for row in report.realized_dividends] == [
+        date(2026, 7, 15)
+    ]
+    assert any(
+        "cash reversal" in limitation.lower()
+        and "ambiguous" in limitation.lower()
+        for limitation in report.data_limitations
+    )
+
+
 def test_reconcile_withholding_reversal_removes_tax_deduction() -> None:
     """A fully reversed withholding lifecycle contributes no line or summary tax."""
     dataset = _dataset(
@@ -469,6 +558,25 @@ def test_reconcile_withholding_reversal_removes_tax_deduction() -> None:
 
     assert report.realized_dividends[0].withholding_tax is None
     assert report.summary.realized.withholding_tax is None
+
+
+def test_reconcile_consumes_one_withholding_across_nearby_dividends_once() -> None:
+    """One tax posting belongs to only its best dividend cash match."""
+    report = build_dividend_income_report(
+        _two_dividends_one_withholding_dataset(),
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+    )
+
+    assert [row.withholding_tax for row in report.realized_dividends] == [
+        3.75,
+        None,
+    ]
+    assert any(
+        "withholding" in limitation.lower()
+        and "ambiguous" in limitation.lower()
+        for limitation in report.data_limitations
+    )
 
 
 def test_reconcile_consumes_exact_accrual_before_tolerant_cash_match() -> None:
@@ -884,6 +992,20 @@ def test_annual_estimate_rejects_tax_rate_above_one() -> None:
 
     report = build_dividend_income_report(
         dataset,
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        history_start_date=date(2025, 8, 1),
+    )
+
+    holding = report.annual_estimate.holdings[0]
+    assert holding.effective_tax_rate is None
+    assert holding.estimated_net is None
+
+
+def test_annual_estimate_rejects_reused_withholding_tax_history() -> None:
+    """Annual net stays unavailable when two events compete for one tax posting."""
+    report = build_dividend_income_report(
+        _two_dividends_one_withholding_dataset(include_position=True),
         date(2026, 7, 1),
         date(2026, 7, 31),
         history_start_date=date(2025, 8, 1),
