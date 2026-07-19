@@ -6,6 +6,8 @@ only on these types, never on raw ib_async objects.
 """
 from __future__ import annotations
 from datetime import date, datetime
+from typing import Literal
+
 from pydantic import BaseModel, Field, PrivateAttr, computed_field
 
 
@@ -200,6 +202,93 @@ class FlexDividendDataset(BaseModel):
     open_dividend_accruals: list[FlexDividendAccrual]
     open_positions: list[FlexOpenPosition]
     instruments: list[FlexInstrument]
+
+
+class DividendIncomeLine(BaseModel):
+    """One realized or expected dividend with native and base-currency facts."""
+
+    symbol: str
+    payment_date: date
+    status: Literal["REALIZED", "EXPECTED"]
+    gross: float | None
+    withholding_tax: float | None
+    fee: float | None
+    net: float | None
+    currency: str
+    fx_rate_to_base: float | None
+    base_gross: float | None
+    base_withholding_tax: float | None
+    base_fee: float | None
+    base_net: float | None
+    quantity: float | None
+    country: str
+
+
+class DividendTotals(BaseModel):
+    """Four dividend amount components aggregated in one stated currency basis."""
+
+    gross: float | None = 0.0
+    withholding_tax: float | None = 0.0
+    fee: float | None = 0.0
+    net: float | None = 0.0
+
+
+class DividendContribution(BaseModel):
+    """One symbol's realized base-currency net contribution."""
+
+    symbol: str
+    base_net: float
+
+
+class DividendIncomeSummary(BaseModel):
+    """Separate base totals plus native-currency and listing-country attribution."""
+
+    realized: DividendTotals
+    expected: DividendTotals
+    by_currency: dict[str, DividendTotals]
+    by_country: dict[str, DividendTotals]
+    top_contributors: list[DividendContribution]
+
+
+class AnnualDividendHolding(BaseModel):
+    """History-based annual dividend run rate for one current eligible holding."""
+
+    symbol: str
+    quantity: float
+    currency: str
+    fx_rate_to_base: float | None
+    trailing_gross_rate: float
+    effective_tax_rate: float | None
+    estimated_gross: float
+    estimated_net: float | None
+    base_estimated_gross: float | None
+    base_estimated_net: float | None
+
+
+class AnnualDividendEstimate(BaseModel):
+    """Portfolio annual dividend lower bound and gross-yield calculation."""
+
+    holdings: list[AnnualDividendHolding]
+    estimated_base_gross: float | None
+    estimated_base_net: float | None
+    eligible_base_market_value: float | None
+    portfolio_estimated_gross_yield: float | None
+    history_days_covered: int
+    complete_history: bool
+
+
+class DividendIncomeReport(BaseModel):
+    """Pure calculated dividend report for an inclusive requested payment period."""
+
+    start_date: date
+    end_date: date
+    base_currency: str
+    realized_dividends: list[DividendIncomeLine]
+    expected_dividends: list[DividendIncomeLine]
+    summary: DividendIncomeSummary
+    annual_estimate: AnnualDividendEstimate
+    coverage_note: str | None = None
+    data_limitations: list[str]
 
 
 class TradeHistorySummary(BaseModel):
