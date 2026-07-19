@@ -132,7 +132,7 @@ def main() -> None:
     parser.add_argument("--token", help="IBKR Flex token")
     parser.add_argument(
         "--window", action="append", default=[],
-        help="window spec '<days>=<query-id>', repeatable",
+        help="window spec '<days|mtd|ytd>=<query-id>', repeatable",
     )
     parser.add_argument(
         "--force", action="store_true", help="replace an existing token or window"

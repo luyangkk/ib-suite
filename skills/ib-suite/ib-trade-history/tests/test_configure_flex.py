@@ -193,3 +193,14 @@ def test_cli_writes_windows_and_never_echoes_values(tmp_path):
     assert token not in ok.stdout + ok.stderr
     assert qid not in ok.stdout + ok.stderr
     assert load_config(path).flex.query_ids == {"7": qid}
+
+
+def test_cli_window_help_documents_period_keys():
+    """The --window help advertises the same mtd/ytd format as the error/SKILL.md."""
+    help_text = subprocess.run(
+        [sys.executable, str(SPEC), "--help"],
+        capture_output=True, text=True, check=False,
+    ).stdout
+    assert "mtd" in help_text
+    assert "ytd" in help_text
+
