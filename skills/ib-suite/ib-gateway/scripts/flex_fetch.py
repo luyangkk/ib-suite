@@ -12,7 +12,16 @@ import xml.etree.ElementTree as ET
 from datetime import date, datetime, timezone
 import requests
 
-from ib_common.schema import Dividend, Execution, FlexTrade
+from ib_common.schema import (
+    Dividend,
+    Execution,
+    FlexCashTransaction,
+    FlexDividendAccrual,
+    FlexDividendDataset,
+    FlexInstrument,
+    FlexOpenPosition,
+    FlexTrade,
+)
 
 _FLEX_BASE = (
     "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService"
@@ -27,6 +36,25 @@ class FlexServiceError(RuntimeError):
         self.code = code
         self.message = message
         super().__init__(f"IBKR Flex error {code}: {message}")
+
+
+class FlexQuerySchemaError(ValueError):
+    """A credential-safe list of sections or fields absent from a Flex Query."""
+
+    def __init__(
+        self,
+        missing_sections: list[str] | None = None,
+        missing_fields: list[str] | None = None,
+    ) -> None:
+        """Build an error containing schema names but no statement values."""
+        self.missing_sections = list(dict.fromkeys(missing_sections or []))
+        self.missing_fields = list(dict.fromkeys(missing_fields or []))
+        details: list[str] = []
+        if self.missing_sections:
+            details.append("sections: " + ", ".join(self.missing_sections))
+        if self.missing_fields:
+            details.append("fields: " + ", ".join(self.missing_fields))
+        super().__init__("Flex Query schema is missing " + "; ".join(details))
 
 
 def _redact_flex_message(message: str, sensitive_values: tuple[str, ...]) -> str:
@@ -91,6 +119,416 @@ def _parse_datetime(value: str) -> datetime:
         except ValueError:
             continue
     raise ValueError(f"invalid Flex dateTime: {value!r}")
+
+
+_DIVIDEND_SECTION_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "AccountInformation": (
+        ("AccountInformation",),
+        ("accountId", "currency"),
+    ),
+    "CashTransactions": (
+        ("CashTransaction",),
+        (
+            "accountId",
+            "currency",
+            "assetCategory",
+            "fxRateToBase",
+            "symbol",
+            "description",
+            "conid",
+            "underlyingConid",
+            "underlyingSymbol",
+            "dateTime",
+            "amount",
+            "type",
+            "tradeID",
+            "withholdingTax",
+            "code",
+        ),
+    ),
+    "ChangeInDividendAccruals": (
+        ("ChangeInDividendAccrual",),
+        (
+            "accountId",
+            "currency",
+            "assetCategory",
+            "fxRateToBase",
+            "symbol",
+            "description",
+            "conid",
+            "date",
+            "exDate",
+            "payDate",
+            "quantity",
+            "tax",
+            "fee",
+            "grossRate",
+            "grossAmount",
+            "netAmount",
+            "code",
+            "reportDate",
+        ),
+    ),
+    "OpenDividendAccruals": (
+        ("OpenDividendAccrual",),
+        (
+            "accountId",
+            "currency",
+            "assetCategory",
+            "fxRateToBase",
+            "symbol",
+            "conid",
+            "exDate",
+            "payDate",
+            "quantity",
+            "tax",
+            "fee",
+            "grossRate",
+            "grossAmount",
+            "netAmount",
+            "code",
+        ),
+    ),
+    "OpenPositions": (
+        ("OpenPosition",),
+        (
+            "accountId",
+            "currency",
+            "assetCategory",
+            "fxRateToBase",
+            "symbol",
+            "conid",
+            "reportDate",
+            "quantity",
+            "multiplier",
+            "markPrice",
+            "positionValue",
+            "side",
+            "levelOfDetail",
+        ),
+    ),
+    "FinancialInstrumentInformation": (
+        ("FinancialInstrumentInfo",),
+        (
+            "assetCategory",
+            "symbol",
+            "currency",
+            "listingExchange",
+            "description",
+            "conid",
+            "isin",
+            "multiplier",
+            "subCategory",
+        ),
+    ),
+}
+
+
+def _statement_scopes(root: ET.Element) -> list[ET.Element]:
+    """Return each FlexStatement, or the root for a statement-shaped fragment."""
+    statements = list(root.iter("FlexStatement"))
+    return statements or [root]
+
+
+def _section_rows(
+    statement: ET.Element,
+    section_name: str,
+    row_names: tuple[str, ...],
+) -> tuple[list[ET.Element], list[ET.Element]]:
+    """Return matching section containers and their known record elements."""
+    if statement.tag == section_name:
+        sections = [statement]
+    else:
+        sections = list(statement.iter(section_name))
+    if section_name == "AccountInformation":
+        return sections, sections
+    rows = [
+        row
+        for section in sections
+        for row_name in row_names
+        for row in section.iter(row_name)
+    ]
+    return sections, rows
+
+
+def _validate_dividend_schema(root: ET.Element) -> None:
+    """Reject omitted Flex sections and selected fields without exposing values."""
+    missing_sections: list[str] = []
+    missing_fields: list[str] = []
+    for statement in _statement_scopes(root):
+        for section_name, (row_names, field_names) in _DIVIDEND_SECTION_FIELDS.items():
+            sections, rows = _section_rows(statement, section_name, row_names)
+            if not sections:
+                missing_sections.append(section_name)
+                continue
+            for row in rows:
+                missing_fields.extend(
+                    f"{section_name}.{field_name}"
+                    for field_name in field_names
+                    if field_name not in row.attrib
+                )
+    if missing_sections or missing_fields:
+        raise FlexQuerySchemaError(missing_sections, missing_fields)
+
+
+def _required_section_value(
+    element: ET.Element, section_name: str, field_name: str
+) -> str:
+    """Return one non-blank Flex field or raise a credential-safe schema error."""
+    value = element.get(field_name)
+    if value is None or not value.strip():
+        raise FlexQuerySchemaError(
+            missing_fields=[f"{section_name}.{field_name}"]
+        )
+    return value.strip()
+
+
+def _present_section_value(
+    element: ET.Element, section_name: str, field_name: str
+) -> str:
+    """Return a selected Flex field that may contain a blank row value."""
+    value = element.get(field_name)
+    if value is None:
+        raise FlexQuerySchemaError(
+            missing_fields=[f"{section_name}.{field_name}"]
+        )
+    return value.strip()
+
+
+def _optional_section_text(
+    element: ET.Element, section_name: str, field_name: str
+) -> str | None:
+    """Normalize a selected blank Flex text fact to None."""
+    return _present_section_value(element, section_name, field_name) or None
+
+
+def _optional_unselected_text(element: ET.Element, field_name: str) -> str | None:
+    """Normalize a non-required blank or omitted Flex text fact to None."""
+    value = element.get(field_name)
+    return value.strip() if value is not None and value.strip() else None
+
+
+def _optional_section_float(
+    element: ET.Element, section_name: str, field_name: str
+) -> float | None:
+    """Parse a selected nullable numeric fact without echoing invalid content."""
+    value = _present_section_value(element, section_name, field_name)
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        raise ValueError(
+            f"Flex {section_name} field {field_name} is invalid"
+        ) from None
+
+
+def _section_date(
+    element: ET.Element, section_name: str, field_name: str
+) -> date:
+    """Parse a required Flex date without echoing invalid content."""
+    value = _required_section_value(element, section_name, field_name)
+    try:
+        return _parse_date(value)
+    except ValueError:
+        raise ValueError(
+            f"Flex {section_name} field {field_name} is invalid"
+        ) from None
+
+
+def _section_datetime(
+    element: ET.Element, section_name: str, field_name: str
+) -> datetime:
+    """Parse a required Flex timestamp without echoing invalid content."""
+    value = _required_section_value(element, section_name, field_name)
+    try:
+        return _parse_datetime(value)
+    except ValueError:
+        raise ValueError(
+            f"Flex {section_name} field {field_name} is invalid"
+        ) from None
+
+
+def _all_dividend_rows(
+    root: ET.Element, section_name: str
+) -> list[ET.Element]:
+    """Collect all known row element names for one validated section."""
+    row_names, _ = _DIVIDEND_SECTION_FIELDS[section_name]
+    rows: list[ET.Element] = []
+    for statement in _statement_scopes(root):
+        _, statement_rows = _section_rows(statement, section_name, row_names)
+        rows.extend(statement_rows)
+    return rows
+
+
+def _parse_cash_transaction(element: ET.Element) -> FlexCashTransaction:
+    """Parse one validated CashTransactions record without changing signs."""
+    section = "CashTransactions"
+    return FlexCashTransaction(
+        account_id=_required_section_value(element, section, "accountId"),
+        currency=_required_section_value(element, section, "currency").upper(),
+        asset_class=_required_section_value(
+            element, section, "assetCategory"
+        ).upper(),
+        fx_rate_to_base=_optional_section_float(
+            element, section, "fxRateToBase"
+        ),
+        symbol=_required_section_value(element, section, "symbol"),
+        description=_optional_section_text(element, section, "description"),
+        conid=_optional_section_text(element, section, "conid"),
+        underlying_conid=_optional_section_text(
+            element, section, "underlyingConid"
+        ),
+        underlying_symbol=_optional_section_text(
+            element, section, "underlyingSymbol"
+        ),
+        ts=_section_datetime(element, section, "dateTime"),
+        amount=_optional_section_float(element, section, "amount"),
+        transaction_type=_required_section_value(element, section, "type"),
+        trade_id=_optional_section_text(element, section, "tradeID"),
+        withholding_871m=_optional_section_float(
+            element, section, "withholdingTax"
+        ),
+        code=_present_section_value(element, section, "code").upper(),
+    )
+
+
+def _parse_dividend_accrual(
+    element: ET.Element, section: str
+) -> FlexDividendAccrual:
+    """Parse one validated changed or open dividend accrual record."""
+    is_change = section == "ChangeInDividendAccruals"
+    return FlexDividendAccrual(
+        account_id=_required_section_value(element, section, "accountId"),
+        currency=_required_section_value(element, section, "currency").upper(),
+        asset_class=_required_section_value(
+            element, section, "assetCategory"
+        ).upper(),
+        fx_rate_to_base=_optional_section_float(
+            element, section, "fxRateToBase"
+        ),
+        symbol=_required_section_value(element, section, "symbol"),
+        description=(
+            _optional_section_text(element, section, "description")
+            if is_change
+            else _optional_unselected_text(element, "description")
+        ),
+        conid=_optional_section_text(element, section, "conid"),
+        accrual_date=(
+            _section_date(element, section, "date") if is_change else None
+        ),
+        ex_date=_section_date(element, section, "exDate"),
+        pay_date=_section_date(element, section, "payDate"),
+        quantity=_optional_section_float(element, section, "quantity"),
+        tax=_optional_section_float(element, section, "tax"),
+        fee=_optional_section_float(element, section, "fee"),
+        gross_rate=_optional_section_float(element, section, "grossRate"),
+        gross_amount=_optional_section_float(element, section, "grossAmount"),
+        net_amount=_optional_section_float(element, section, "netAmount"),
+        code=_present_section_value(element, section, "code").upper(),
+        report_date=(
+            _section_date(element, section, "reportDate") if is_change else None
+        ),
+    )
+
+
+def _parse_open_position(element: ET.Element) -> FlexOpenPosition:
+    """Parse one validated OpenPositions record without filtering it."""
+    section = "OpenPositions"
+    return FlexOpenPosition(
+        account_id=_required_section_value(element, section, "accountId"),
+        currency=_required_section_value(element, section, "currency").upper(),
+        asset_class=_required_section_value(
+            element, section, "assetCategory"
+        ).upper(),
+        fx_rate_to_base=_optional_section_float(
+            element, section, "fxRateToBase"
+        ),
+        symbol=_required_section_value(element, section, "symbol"),
+        conid=_optional_section_text(element, section, "conid"),
+        report_date=_section_date(element, section, "reportDate"),
+        quantity=_optional_section_float(element, section, "quantity"),
+        multiplier=_optional_section_float(element, section, "multiplier"),
+        mark_price=_optional_section_float(element, section, "markPrice"),
+        position_value=_optional_section_float(element, section, "positionValue"),
+        side=_required_section_value(element, section, "side").upper(),
+        level_of_detail=_required_section_value(
+            element, section, "levelOfDetail"
+        ).upper(),
+    )
+
+
+def _parse_instrument(element: ET.Element) -> FlexInstrument:
+    """Parse one validated FinancialInstrumentInformation record."""
+    section = "FinancialInstrumentInformation"
+    return FlexInstrument(
+        asset_class=_required_section_value(
+            element, section, "assetCategory"
+        ).upper(),
+        symbol=_required_section_value(element, section, "symbol"),
+        currency=_required_section_value(element, section, "currency").upper(),
+        listing_exchange=(
+            value.upper()
+            if (value := _optional_section_text(element, section, "listingExchange"))
+            else None
+        ),
+        description=_optional_section_text(element, section, "description"),
+        conid=_optional_section_text(element, section, "conid"),
+        isin=(
+            value.upper()
+            if (value := _optional_section_text(element, section, "isin"))
+            else None
+        ),
+        multiplier=_optional_section_float(element, section, "multiplier"),
+        security_subtype=(
+            value.upper()
+            if (value := _optional_section_text(element, section, "subCategory"))
+            else None
+        ),
+    )
+
+
+def parse_flex_dividend_dataset(xml_text: str) -> FlexDividendDataset:
+    """Parse all six required Flex dividend sections into typed raw records."""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        raise ValueError("Flex dividend XML is invalid") from None
+    _validate_dividend_schema(root)
+
+    account_rows = _all_dividend_rows(root, "AccountInformation")
+    base_currencies = {
+        _required_section_value(row, "AccountInformation", "currency").upper()
+        for row in account_rows
+    }
+    if len(base_currencies) != 1:
+        raise ValueError("Flex AccountInformation field currency is inconsistent")
+
+    change_section = "ChangeInDividendAccruals"
+    open_section = "OpenDividendAccruals"
+    return FlexDividendDataset(
+        base_currency=next(iter(base_currencies)),
+        cash_transactions=[
+            _parse_cash_transaction(row)
+            for row in _all_dividend_rows(root, "CashTransactions")
+        ],
+        dividend_accruals=[
+            _parse_dividend_accrual(row, change_section)
+            for row in _all_dividend_rows(root, change_section)
+        ],
+        open_dividend_accruals=[
+            _parse_dividend_accrual(row, open_section)
+            for row in _all_dividend_rows(root, open_section)
+        ],
+        open_positions=[
+            _parse_open_position(row)
+            for row in _all_dividend_rows(root, "OpenPositions")
+        ],
+        instruments=[
+            _parse_instrument(row)
+            for row in _all_dividend_rows(root, "FinancialInstrumentInformation")
+        ],
+    )
 
 
 def _required(trade: ET.Element, name: str) -> str:

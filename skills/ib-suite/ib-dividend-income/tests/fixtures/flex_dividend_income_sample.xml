@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FlexQueryResponse queryName="dividend-income-sample" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="2026-01-01" toDate="2026-07-31">
+      <AccountInformation accountId="U0000000" currency="USD"/>
+      <CashTransactions>
+        <CashTransaction accountId="U0000000" currency="USD" assetCategory="STK"
+                         fxRateToBase="1.0" symbol="AAPL" description="AAPL CASH DIVIDEND"
+                         conid="265598" underlyingConid="" underlyingSymbol=""
+                         dateTime="2026-05-15;08:30:00" amount="25.00" type="Dividends"
+                         tradeID="" withholdingTax="0.00" code="Po"/>
+        <CashTransaction accountId="U0000000" currency="USD" assetCategory="STK"
+                         fxRateToBase="1.0" symbol="AAPL" description="AAPL WITHHOLDING TAX"
+                         conid="265598" underlyingConid="" underlyingSymbol=""
+                         dateTime="20260515;083000" amount="-3.75" type="Withholding Tax"
+                         tradeID="" withholdingTax="0.00" code="Po"/>
+      </CashTransactions>
+      <ChangeInDividendAccruals>
+        <ChangeInDividendAccrual accountId="U0000000" currency="USD" assetCategory="STK"
+                                 fxRateToBase="1.0" symbol="AAPL" description="APPLE INC"
+                                 conid="265598" date="2026-05-08" exDate="2026-05-08"
+                                 payDate="2026-05-15" quantity="100" tax="-3.75" fee="0.00"
+                                 grossRate="0.25" grossAmount="25.00" netAmount="21.25"
+                                 code="Po" reportDate="2026-05-08"/>
+        <ChangeInDividendAccrual accountId="U0000000" currency="USD" assetCategory="STK"
+                                 fxRateToBase="1.0" symbol="AAPL" description="APPLE INC"
+                                 conid="265598" date="20260515" exDate="20260508"
+                                 payDate="20260515" quantity="-100" tax="3.75" fee="0.00"
+                                 grossRate="-0.25" grossAmount="-25.00" netAmount="-21.25"
+                                 code="Re" reportDate="20260515"/>
+      </ChangeInDividendAccruals>
+      <OpenDividendAccruals>
+        <OpenDividendAccrual accountId="U0000000" currency="SGD" assetCategory="FUND"
+                             fxRateToBase="0.74" symbol="SGFUND" description="SINGAPORE FUND"
+                             conid="900001" exDate="2026-08-01" payDate="2026-08-15"
+                             quantity="200" tax="-2.00" fee="0.00" grossRate="0.10"
+                             grossAmount="20.00" netAmount="18.00" code="Po"/>
+      </OpenDividendAccruals>
+      <OpenPositions>
+        <OpenPosition accountId="U0000000" currency="USD" assetCategory="STK"
+                      fxRateToBase="1.0" symbol="AAPL" conid="265598"
+                      reportDate="2026-07-31" quantity="100" multiplier="1"
+                      markPrice="210.00" positionValue="21000.00" side="Long"
+                      levelOfDetail="Summary"/>
+        <OpenPosition accountId="U0000000" currency="SGD" assetCategory="FUND"
+                      fxRateToBase="0.74" symbol="SGFUND" conid="900001"
+                      reportDate="20260731" quantity="200" multiplier="1"
+                      markPrice="12.00" positionValue="2400.00" side="Long"
+                      levelOfDetail="Summary"/>
+        <OpenPosition accountId="U0000000" currency="USD" assetCategory="STK"
+                      fxRateToBase="1.0" symbol="SHORT" conid="900002"
+                      reportDate="2026-07-31" quantity="-10" multiplier="1"
+                      markPrice="50.00" positionValue="-500.00" side="Short"
+                      levelOfDetail="Summary"/>
+        <OpenPosition accountId="U0000000" currency="USD" assetCategory="OPT"
+                      fxRateToBase="1.0" symbol="AAPL 260918C00250000" conid="900003"
+                      reportDate="2026-07-31" quantity="1" multiplier="100"
+                      markPrice="2.00" positionValue="200.00" side="Long"
+                      levelOfDetail="Summary"/>
+      </OpenPositions>
+      <FinancialInstrumentInformation>
+        <FinancialInstrumentInfo assetCategory="STK" symbol="AAPL" currency="USD"
+                                 listingExchange="NASDAQ" description="APPLE INC"
+                                 conid="265598" isin="US0378331005" multiplier="1"
+                                 subCategory="COMMON"/>
+        <FinancialInstrumentInfo assetCategory="FUND" symbol="SGFUND" currency="SGD"
+                                 listingExchange="SGX" description="SINGAPORE FUND"
+                                 conid="900001" isin="SG0000000001" multiplier="1"
+                                 subCategory="ETF"/>
+        <FinancialInstrumentInfo assetCategory="STK" symbol="SHORT" currency="USD"
+                                 listingExchange="NYSE" description="SHORT SAMPLE"
+                                 conid="900002" isin="US0000000002" multiplier="1"
+                                 subCategory="COMMON"/>
+        <FinancialInstrumentInfo assetCategory="OPT" symbol="AAPL 260918C00250000" currency="USD"
+                                 listingExchange="" description="AAPL CALL"
+                                 conid="900003" isin="" multiplier="100" subCategory=""/>
+      </FinancialInstrumentInformation>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

@@ -1,5 +1,6 @@
 from pathlib import Path
 import importlib.util
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -9,6 +10,130 @@ flex = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(flex)
 
 FIX = Path(__file__).parent / "fixtures"
+DIVIDEND_FIX = (
+    Path(__file__).parents[2]
+    / "ib-dividend-income"
+    / "tests"
+    / "fixtures"
+    / "flex_dividend_income_sample.xml"
+)
+
+
+def _without_section(xml_text: str, section_name: str) -> str:
+    """Return fixture XML with one statement-level section removed."""
+    root = ET.fromstring(xml_text)
+    statement = root.find(".//FlexStatement")
+    assert statement is not None
+    section = statement.find(section_name)
+    assert section is not None
+    statement.remove(section)
+    return ET.tostring(root, encoding="unicode")
+
+
+def _without_attribute(
+    xml_text: str, element_name: str, attribute_name: str
+) -> str:
+    """Return fixture XML with one selected query attribute removed."""
+    root = ET.fromstring(xml_text)
+    element = root.find(f".//{element_name}")
+    assert element is not None
+    del element.attrib[attribute_name]
+    return ET.tostring(root, encoding="unicode")
+
+
+def test_parse_flex_dividend_dataset_keeps_normalized_raw_records() -> None:
+    """The six dividend sections become typed records without sign changes."""
+    xml_text = DIVIDEND_FIX.read_text(encoding="utf-8")
+
+    dataset = flex.parse_flex_dividend_dataset(xml_text)
+
+    assert dataset.base_currency == "USD"
+    assert len(dataset.cash_transactions) == 2
+    assert dataset.cash_transactions[0].symbol == "AAPL"
+    assert dataset.cash_transactions[0].fx_rate_to_base == 1.0
+    assert dataset.cash_transactions[0].ts.isoformat() == (
+        "2026-05-15T08:30:00+00:00"
+    )
+    assert dataset.cash_transactions[1].amount == -3.75
+    assert dataset.cash_transactions[0].underlying_conid is None
+    assert dataset.dividend_accruals[0].quantity == 100
+    assert dataset.dividend_accruals[1].gross_amount == -25.0
+    assert dataset.dividend_accruals[1].code == "RE"
+    assert dataset.open_dividend_accruals[0].pay_date.isoformat() == "2026-08-15"
+    assert dataset.open_positions[0].level_of_detail == "SUMMARY"
+    assert dataset.open_positions[2].side == "SHORT"
+    assert dataset.instruments[0].listing_exchange == "NASDAQ"
+    assert dataset.instruments[3].listing_exchange is None
+
+
+@pytest.mark.parametrize(
+    "section_name",
+    [
+        "AccountInformation",
+        "CashTransactions",
+        "ChangeInDividendAccruals",
+        "OpenDividendAccruals",
+        "OpenPositions",
+        "FinancialInstrumentInformation",
+    ],
+)
+def test_required_dividend_dataset_section_errors_are_safe(
+    section_name: str,
+) -> None:
+    """A missing dividend section reports only its schema name."""
+    xml_text = DIVIDEND_FIX.read_text(encoding="utf-8")
+
+    with pytest.raises(flex.FlexQuerySchemaError) as excinfo:
+        flex.parse_flex_dividend_dataset(_without_section(xml_text, section_name))
+
+    error = excinfo.value
+    assert error.missing_sections == [section_name]
+    assert error.missing_fields == []
+    assert section_name in str(error)
+    assert "U0000000" not in str(error)
+    assert "<FlexQueryResponse" not in str(error)
+
+
+@pytest.mark.parametrize(
+    ("section_name", "element_name", "attribute_name"),
+    [
+        ("AccountInformation", "AccountInformation", "currency"),
+        ("CashTransactions", "CashTransaction", "amount"),
+        (
+            "ChangeInDividendAccruals",
+            "ChangeInDividendAccrual",
+            "quantity",
+        ),
+        ("OpenDividendAccruals", "OpenDividendAccrual", "payDate"),
+        ("OpenPositions", "OpenPosition", "levelOfDetail"),
+        (
+            "FinancialInstrumentInformation",
+            "FinancialInstrumentInfo",
+            "listingExchange",
+        ),
+    ],
+)
+def test_required_dividend_dataset_field_errors_are_safe(
+    section_name: str,
+    element_name: str,
+    attribute_name: str,
+) -> None:
+    """An omitted selected field reports only its section and attribute."""
+    xml_text = DIVIDEND_FIX.read_text(encoding="utf-8")
+
+    with pytest.raises(flex.FlexQuerySchemaError) as excinfo:
+        flex.parse_flex_dividend_dataset(
+            _without_attribute(xml_text, element_name, attribute_name)
+        )
+
+    error = excinfo.value
+    field_name = f"{section_name}.{attribute_name}"
+    assert error.missing_sections == []
+    assert error.missing_fields == [field_name]
+    assert section_name in str(error)
+    assert attribute_name in str(error)
+    assert "U0000000" not in str(error)
+    assert "<FlexQueryResponse" not in str(error)
 
 
 def test_parse_flex_dividends():

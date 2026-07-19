@@ -116,6 +116,92 @@ class FlexTrade(BaseModel):
         return None if self.fx_rate_to_base is None else self.realized_pnl * self.fx_rate_to_base
 
 
+class FlexCashTransaction(BaseModel):
+    """One normalized Flex cash movement used for dividend reconciliation."""
+
+    account_id: str
+    currency: str
+    asset_class: str
+    fx_rate_to_base: float | None
+    symbol: str
+    description: str | None
+    conid: str | None
+    underlying_conid: str | None
+    underlying_symbol: str | None
+    ts: datetime
+    amount: float | None
+    transaction_type: str
+    trade_id: str | None
+    withholding_871m: float | None
+    code: str
+
+
+class FlexDividendAccrual(BaseModel):
+    """One raw changed or open Flex dividend-accrual record."""
+
+    account_id: str
+    currency: str
+    asset_class: str
+    fx_rate_to_base: float | None
+    symbol: str
+    description: str | None
+    conid: str | None
+    accrual_date: date | None
+    ex_date: date
+    pay_date: date
+    quantity: float | None
+    tax: float | None
+    fee: float | None
+    gross_rate: float | None
+    gross_amount: float | None
+    net_amount: float | None
+    code: str
+    report_date: date | None
+
+
+class FlexOpenPosition(BaseModel):
+    """One raw Flex open position used by annual dividend estimates."""
+
+    account_id: str
+    currency: str
+    asset_class: str
+    fx_rate_to_base: float | None
+    symbol: str
+    conid: str | None
+    report_date: date
+    quantity: float | None
+    multiplier: float | None
+    mark_price: float | None
+    position_value: float | None
+    side: str
+    level_of_detail: str
+
+
+class FlexInstrument(BaseModel):
+    """One raw Flex financial-instrument identity and listing record."""
+
+    asset_class: str
+    symbol: str
+    currency: str
+    listing_exchange: str | None
+    description: str | None
+    conid: str | None
+    isin: str | None
+    multiplier: float | None
+    security_subtype: str | None
+
+
+class FlexDividendDataset(BaseModel):
+    """Strictly parsed raw records from the six dividend Flex sections."""
+
+    base_currency: str
+    cash_transactions: list[FlexCashTransaction]
+    dividend_accruals: list[FlexDividendAccrual]
+    open_dividend_accruals: list[FlexDividendAccrual]
+    open_positions: list[FlexOpenPosition]
+    instruments: list[FlexInstrument]
+
+
 class TradeHistorySummary(BaseModel):
     """Base-currency aggregate statistics for an inclusive trade period."""
 
