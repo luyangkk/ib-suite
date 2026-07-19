@@ -24,6 +24,7 @@ from ib_common.schema import (
 
 _EventKey: TypeAlias = tuple[str, str, str, date, date]
 _CashIdentity: TypeAlias = tuple[str, str, str]
+_LifecycleAmbiguity: TypeAlias = tuple[str, date]
 _MatchRank: TypeAlias = tuple[int, int]
 _MATCH_TOLERANCE_DAYS = 3
 _EXCHANGE_COUNTRIES = {
@@ -290,6 +291,7 @@ def _reduce_cash_lifecycle(
     *,
     transaction_kind: Literal["DIVIDEND", "WITHHOLDING"],
     limitations: list[str] | None = None,
+    ambiguity_events: set[_LifecycleAmbiguity] | None = None,
 ) -> list[FlexCashTransaction]:
     """Apply signed postings and coded reversals to stable cash identities."""
     unique: list[FlexCashTransaction] = []
@@ -355,6 +357,14 @@ def _reduce_cash_lifecycle(
                     target_index = None
 
             if target_index is None:
+                if ambiguity_events is not None:
+                    ambiguity_events.add(
+                        (_normalized_symbol(row.symbol), row.ts.date())
+                    )
+                    ambiguity_events.update(
+                        (_normalized_symbol(posting.symbol), posting.ts.date())
+                        for posting, _ in active
+                    )
                 if limitations is not None:
                     limitations.append(
                         f"{transaction_kind.title()} cash reversal for "
@@ -381,12 +391,14 @@ def _reduce_dividend_cash_lifecycle(
     rows: list[FlexCashTransaction],
     *,
     limitations: list[str] | None = None,
+    ambiguity_events: set[_LifecycleAmbiguity] | None = None,
 ) -> list[FlexCashTransaction]:
     """Reduce dividend cash postings and reversals to surviving payments."""
     return _reduce_cash_lifecycle(
         rows,
         transaction_kind="DIVIDEND",
         limitations=limitations,
+        ambiguity_events=ambiguity_events,
     )
 
 
@@ -405,9 +417,17 @@ def _is_withholding_cash(
 
 def _reduce_withholding_cash_lifecycle(
     rows: list[FlexCashTransaction],
+    *,
+    limitations: list[str] | None = None,
+    ambiguity_events: set[_LifecycleAmbiguity] | None = None,
 ) -> list[FlexCashTransaction]:
     """Reduce withholding postings and reversals to surviving deductions."""
-    return _reduce_cash_lifecycle(rows, transaction_kind="WITHHOLDING")
+    return _reduce_cash_lifecycle(
+        rows,
+        transaction_kind="WITHHOLDING",
+        limitations=limitations,
+        ambiguity_events=ambiguity_events,
+    )
 
 
 def _best_cash_date_indices(
@@ -462,9 +482,16 @@ def _best_withholding_candidates(
 def _associate_withholdings(
     dividend_rows: list[FlexCashTransaction],
     cash_rows: list[FlexCashTransaction],
+    *,
+    limitations: list[str] | None = None,
+    ambiguity_events: set[_LifecycleAmbiguity] | None = None,
 ) -> list[tuple[float | None, bool]]:
     """Assign each reduced withholding posting to at most one dividend cash row."""
-    withholding_rows = _reduce_withholding_cash_lifecycle(cash_rows)
+    withholding_rows = _reduce_withholding_cash_lifecycle(
+        cash_rows,
+        limitations=limitations,
+        ambiguity_events=ambiguity_events,
+    )
     results: list[tuple[float | None, bool]] = [
         (None, False) for _ in dividend_rows
     ]
@@ -714,10 +741,14 @@ def _effective_tax_rate(
     accruals: list[FlexDividendAccrual],
 ) -> float | None:
     """Calculate tax rate only when every trailing cash event is fully reliable."""
+    ambiguity_events: set[_LifecycleAmbiguity] = set()
     symbol_cash = _unique_dividend_cash(
         [
             row
-            for row in _reduce_dividend_cash_lifecycle(cash_rows)
+            for row in _reduce_dividend_cash_lifecycle(
+                cash_rows,
+                ambiguity_events=ambiguity_events,
+            )
             if _is_dividend_cash(row)
             and trailing_start <= row.ts.date() <= end_date
             and _normalized_symbol(row.symbol) == _normalized_symbol(symbol)
@@ -726,7 +757,18 @@ def _effective_tax_rate(
     if not symbol_cash:
         return None
 
-    withholding_associations = _associate_withholdings(symbol_cash, cash_rows)
+    withholding_associations = _associate_withholdings(
+        symbol_cash,
+        cash_rows,
+        ambiguity_events=ambiguity_events,
+    )
+    normalized_symbol = _normalized_symbol(symbol)
+    if any(
+        affected_symbol == normalized_symbol
+        and trailing_start <= affected_date <= end_date
+        for affected_symbol, affected_date in ambiguity_events
+    ):
+        return None
     gross_total = 0.0
     tax_total = 0.0
     matched_events: set[_EventKey] = set()
@@ -1027,6 +1069,7 @@ def build_dividend_income_report(
     withholding_associations = _associate_withholdings(
         dividend_cash,
         dataset.cash_transactions,
+        limitations=limitations,
     )
     realized: list[DividendIncomeLine] = []
 

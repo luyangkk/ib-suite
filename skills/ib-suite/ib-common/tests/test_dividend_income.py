@@ -1016,6 +1016,75 @@ def test_annual_estimate_rejects_reused_withholding_tax_history() -> None:
     assert holding.estimated_net is None
 
 
+@pytest.mark.parametrize("ambiguous_kind", ["DIVIDEND", "WITHHOLDING"])
+def test_annual_estimate_rejects_ambiguous_trailing_cash_lifecycle(
+    ambiguous_kind: str,
+) -> None:
+    """Any unresolved trailing cash reversal makes annual net unreliable."""
+    accrual_tax = -3.75 if ambiguous_kind == "DIVIDEND" else None
+    cash = [
+        _cash(payment_date=date(2026, 6, 15)),
+        _cash(payment_date=date(2026, 7, 15)),
+    ]
+    if ambiguous_kind == "DIVIDEND":
+        cash.append(_cash(payment_date=date(2026, 7, 20), code="RE"))
+    else:
+        cash.extend(
+            [
+                _cash(
+                    amount=-3.75,
+                    transaction_type="Withholding Tax",
+                    payment_date=date(2026, 6, 15),
+                ),
+                _cash(
+                    amount=-3.75,
+                    transaction_type="Withholding Tax",
+                    payment_date=date(2026, 7, 15),
+                ),
+                _cash(
+                    amount=3.75,
+                    transaction_type="Withholding Tax",
+                    payment_date=date(2026, 7, 20),
+                    code="RE",
+                ),
+            ]
+        )
+    dataset = _dataset(
+        cash=cash,
+        accruals=[
+            _accrual(
+                ex_date=date(2026, 6, 8),
+                pay_date=date(2026, 6, 15),
+                tax=accrual_tax,
+                net=None,
+            ),
+            _accrual(
+                ex_date=date(2026, 7, 8),
+                pay_date=date(2026, 7, 15),
+                tax=accrual_tax,
+                net=None,
+            ),
+        ],
+        positions=[_position()],
+    )
+
+    report = build_dividend_income_report(
+        dataset,
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        history_start_date=date(2025, 8, 1),
+    )
+
+    holding = report.annual_estimate.holdings[0]
+    assert holding.effective_tax_rate is None
+    assert holding.estimated_net is None
+    assert any(
+        "ambiguous" in limitation.lower()
+        and "reversal" in limitation.lower()
+        for limitation in report.data_limitations
+    )
+
+
 def test_annual_estimate_deduplicates_exact_and_symbol_fallback_events() -> None:
     """One conid event repeated without conid contributes its per-share rate once."""
     exact = _accrual(conid="1", gross_rate=0.25)
