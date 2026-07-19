@@ -52,14 +52,6 @@ def test_flex_query_ids_parsed_as_int_keyed_map(tmp_path):
     assert cfg.flex.query_ids == {7: "q7", 30: "q30"}
 
 
-def test_load_config_rejects_legacy_single_query_id(tmp_path):
-    """The retired single query_id key must direct users to query_ids."""
-    path = tmp_path / "config.yaml"
-    path.write_text("flex:\n  token: t\n  query_id: legacy\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="query_ids"):
-        load_config(path)
-
-
 def test_options_market_data_defaults_to_disabled():
     """Default is the free mode: no option market-data requests, no snapshot fees."""
     cfg = load_config(FIX / "config_minimal.yaml")

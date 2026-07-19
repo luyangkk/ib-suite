@@ -56,12 +56,6 @@ def load_config(path: str | Path) -> Config:
     yaml = YAML(typ="safe")
     with open(path, "r", encoding="utf-8") as f:
         raw = yaml.load(f) or {}
-    flex = raw.get("flex")
-    if isinstance(flex, dict) and "query_id" in flex:
-        raise ValueError(
-            "flex.query_id is retired; configure flex.query_ids "
-            "(a days->Query ID map) via configure_flex.py --window"
-        )
     return Config(**raw)
 
 

@@ -91,20 +91,6 @@ def test_configure_flex_overwriting_token_requires_force(tmp_path):
     assert load_config(path).flex.token == "new"
 
 
-def test_configure_flex_removes_legacy_query_id(tmp_path):
-    """Writing the new structure clears the retired single query_id key."""
-    configure_flex = load_module()
-    path = tmp_path / "config.yaml"
-    path.write_text("flex:\n  query_id: legacy\n", encoding="utf-8")
-
-    configure_flex.configure_flex(path, token="t", windows={7: "q7"})
-
-    raw = path.read_text(encoding="utf-8")
-    assert "query_id:" not in raw.replace("query_ids:", "")
-    cfg = load_config(path)
-    assert cfg.flex.query_ids == {7: "q7"}
-
-
 def test_configure_flex_requires_token_or_window(tmp_path):
     """Calling with neither token nor windows is a usage error."""
     configure_flex = load_module()

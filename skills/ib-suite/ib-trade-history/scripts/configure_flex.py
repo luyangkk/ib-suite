@@ -84,10 +84,6 @@ def configure_flex(
                 f"Flex windows already exist for {sorted(clashes)}; pass --force to replace"
             )
 
-    # Retire the legacy single-value key.
-    if "query_id" in flex:
-        del flex["query_id"]
-
     if token is not None:
         flex["token"] = token
     if windows:
