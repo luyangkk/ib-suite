@@ -1,6 +1,6 @@
 ---
 name: ib-suite
-description: Read-only Interactive Brokers toolchain index and onboarding. Use when orienting across the ib-suite skills, running first-run setup (venv + live/paper config), or deciding which IB skill to run and in what order: ib-sync ingestion, live account/positions/daily-P&L/options overviews, Flex trade history, or the offline ib-analyze report. It runs nothing itself — the sub-skills do the work and never place, modify, or cancel an order.
+description: Read-only Interactive Brokers toolchain index and onboarding. Use when orienting across the ib-suite skills, running first-run setup (venv + live/paper config), or deciding which IB skill to run and in what order: ib-sync ingestion, live account/positions/daily-P&L/options overviews, Flex trade or dividend history, or the offline ib-analyze report. It runs nothing itself — the sub-skills do the work and never place, modify, or cancel an order.
 metadata:
   openclaw:
     always: true
@@ -45,9 +45,9 @@ onboarding; the sub-skills stay gated until `config.yaml` is present.
    It refuses to overwrite an existing config unless you add `--force`.
 5. **Report back:** the config path and the resulting mode/port. Remind the
    user to start IB Gateway with **Read-Only API** enabled before `/ib-sync`,
-   and that `ib-trade-history` stores its Flex token and per-window Query IDs in
-   ignored local config (`flex.token` / `flex.query_ids`); never echo either
-   credential.
+   and that `ib-trade-history` and `ib-dividend-income` share one Flex token and
+   per-window Query ID map in ignored local config (`flex.token` /
+   `flex.query_ids`); never echo either credential.
 6. Proceed to §2 and run `/ib-sync` → `/ib-analyze`.
 
 Runtime config and data stay workspace-local under `<workspace>/.ib-suite/`
@@ -63,6 +63,7 @@ Runtime config and data stay workspace-local under `<workspace>/.ib-suite/`
 | [ib-positions-overview]({baseDir}/ib-positions-overview) | Read-only enriched positions overview skill → `/ib-positions-overview` | Yes | Yes (IB Gateway) |
 | [ib-daily-pnl]({baseDir}/ib-daily-pnl) | Read-only daily (today's) P&L breakdown skill → `/ib-daily-pnl` | Yes | Yes (IB Gateway) |
 | [ib-trade-history]({baseDir}/ib-trade-history) | Read-only Flex Query execution-history skill → `/ib-trade-history` | Yes | Yes (Flex Web Service) |
+| [ib-dividend-income]({baseDir}/ib-dividend-income) | Read-only Flex-only paid/expected dividend-income skill → `/ib-dividend-income` | Yes | Yes (Flex Web Service) |
 | [ib-options-overview]({baseDir}/ib-options-overview) | Read-only option positions and Greeks overview skill → `/ib-options-overview` | Yes | Yes (IB Gateway) |
 | [ib-portfolio-analyst]({baseDir}/ib-portfolio-analyst) | Offline diagnostics skill → `/ib-analyze` | Yes | No |
 
@@ -76,13 +77,14 @@ skills/ib-suite/
   ib-positions-overview/   # /ib-positions-overview: IB positions -> enriched, ranked overview (no persistence)
   ib-daily-pnl/            # /ib-daily-pnl: IB live P&L -> today's realized/unrealized, ranked (no persistence)
   ib-trade-history/        # /ib-trade-history: Flex executions -> stdout JSON (no persistence)
+  ib-dividend-income/      # /ib-dividend-income: Flex dividends -> stdout JSON (no account-data persistence)
   ib-options-overview/     # /ib-options-overview: IB live options -> Greeks and risk overview (no persistence)
   ib-portfolio-analyst/    # /ib-analyze: data lake -> report.md + charts
 ```
 
 **Scope.** In: read-only sync, snapshots, Parquet history, and P0–P3 findings
 across account health, concentration, P&L attribution, trade review, portfolio
-risk, pre-trade simulation, and dividends. **Out (hard boundary):** order
+risk, pre-trade simulation, and Flex-only dividend income. **Out (hard boundary):** order
 placement/modification/cancellation, live WhatIf margin checks, real-time market
 data, and any write path to IB. Do not add these under the banner of
 "completeness".
@@ -127,10 +129,11 @@ setup_venv.sh        ->  ib-gateway /ib-sync      ->  ib-portfolio-analyst /ib-a
 | List every position, ranked, with the most concentrated name | `ib-positions-overview` → `/ib-positions-overview` |
 | See how the account did today and which names drove it | `ib-daily-pnl` → `/ib-daily-pnl` |
 | List historical fills, commission, realized P&L and win/loss statistics | `ib-trade-history` → `/ib-trade-history` |
-| Configure Flex credentials for trade history | `ib-trade-history` → `/ib-trade-history` setup |
+| See paid/expected dividends, tax, attribution, annual income and yield | `ib-dividend-income` → `/ib-dividend-income` |
+| Configure shared Flex credentials or dividend query fields | `ib-dividend-income` → `/ib-dividend-income` setup guide |
 | Inspect option holdings, IV, Greeks, expiry exposure, and concentration | `ib-options-overview` → `/ib-options-overview` |
 | Produce a diagnostic report from existing data | `ib-portfolio-analyst` → `/ib-analyze` |
-| Test either skill without IB | its `tests/` fixtures (see §5) |
+| Test any skill without IB | its `tests/` fixtures (see §5) |
 
 **Note on optional inputs.** `/ib-sync` v1 lands only the account snapshot and
 positions. Daily bars, executions, and dividends are optional JSON arrays
@@ -167,8 +170,10 @@ any future one) MUST follow this contract:
 ## 4. Invocation
 
 **As OpenClaw slash commands (primary).** Once discovered, the sub-skills expose
-`/ib-sync` and `/ib-analyze`. Gating is driven by each skill's `metadata.openclaw`
-(`python3` on `PATH`, a `config.yaml`, and a supported OS).
+`/ib-sync`, `/ib-account-overview`, `/ib-positions-overview`, `/ib-daily-pnl`,
+`/ib-trade-history`, `/ib-dividend-income`, `/ib-options-overview`, and
+`/ib-analyze`. Gating is driven by each skill's `metadata.openclaw` (`python3`
+on `PATH`, a `config.yaml`, and a supported OS).
 
 **As direct scripts (for automation / other systems).** Call the entry scripts
 with the shared interpreter; they print structured, parseable results (dicts /
@@ -182,6 +187,12 @@ output paths) to stdout and return non-zero on failure:
 {baseDir}/.venv/bin/python {baseDir}/ib-trade-history/scripts/trade_history.py \
   --config .ib-suite/config.yaml
 
+# Flex-only dividend income (inclusive dates are required)
+{baseDir}/.venv/bin/python {baseDir}/ib-dividend-income/scripts/dividend_income.py \
+  --config .ib-suite/config.yaml \
+  --start-date 2026-01-01 \
+  --end-date 2026-07-19
+
 # analyze (bars/executions/dividends optional)
 {baseDir}/.venv/bin/python {baseDir}/ib-portfolio-analyst/scripts/analyze.py \
   --config .ib-suite/config.yaml \
@@ -190,6 +201,9 @@ output paths) to stdout and return non-zero on failure:
 ```
 
 **As a library.** `import ib_common` (installed editable) for config/schema/
-storage/metrics/charts. `ib-trade-history` stores its Flex token and per-window
-Query IDs (`flex.token` / `flex.query_ids`) in ignored local config. Never
-hardcode or echo tokens, account numbers, or user paths.
+storage/metrics/charts. `ib-trade-history` and `ib-dividend-income` share the
+Flex token and per-window Query IDs (`flex.token` / `flex.query_ids`) in ignored
+local config. The dividend skill requires numeric windows and its standalone
+field/window guide is
+[ib-dividend-income/flex-query-setup.md]({baseDir}/ib-dividend-income/flex-query-setup.md).
+Never hardcode or echo tokens, Query IDs, account numbers, or user paths.

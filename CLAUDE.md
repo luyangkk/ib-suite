@@ -13,7 +13,7 @@ is no `agents/openai.yaml`, no `references/` or `assets/` directory, and no
 account data **read-only** and turn it into structured portfolio diagnostics.
 
 Everything lives under `skills/ib-suite/`, which is the single installable unit.
-It contains **one index skill + five functional skills + one shared library**:
+It contains **one index skill + eight functional skills + one shared library**:
 
 - **`ib-suite`** (index) — the router/onboarding skill. `always: true`, no config
   gate. It runs nothing itself; it tells you (and OpenClaw) which sub-skill to
@@ -30,6 +30,16 @@ It contains **one index skill + five functional skills + one shared library**:
 - **`ib-daily-pnl`** — command `/ib-daily-pnl`. Live read-only breakdown of
   today's P&L (realized/unrealized), ranked winners/losers, by asset class and
   currency. **Prints to stdout; persists nothing.**
+- **`ib-trade-history`** — command `/ib-trade-history`. Read-only Flex Web
+  Service execution history, commissions, realized FIFO P&L, and win/loss
+  statistics. **Prints one JSON object; persists no report rows.**
+- **`ib-dividend-income`** — command `/ib-dividend-income`. Read-only,
+  Flex-only paid and expected dividend income, attribution, annual estimate,
+  and yield for an inclusive date range. **Prints one JSON object; persists no
+  account data.**
+- **`ib-options-overview`** — command `/ib-options-overview`. Live read-only
+  option positions, IV, Greeks, expiry exposure, and concentration. **Prints to
+  stdout; persists nothing.**
 - **`ib-portfolio-analyst`** — command `/ib-analyze`. Offline diagnostics: reads
   the data lake and emits a P0–P3 graded findings report plus charts. **Never
   touches the network, never contacts IB, never places orders.**
@@ -37,13 +47,15 @@ It contains **one index skill + five functional skills + one shared library**:
   / metrics / charts), installed editable into the shared `.venv`. Depended on by
   every skill. **It is not itself a skill.**
 
-- **Typical inputs:** a `config.yaml`; snapshot JSON under
+- **Typical inputs:** a `config.yaml` (including ignored local `flex.token` and
+  per-window `flex.query_ids` for Flex skills); snapshot JSON under
   `.ib-suite/data/snapshots/<account>/<ts>.json`; optional bars / executions /
   dividends JSON arrays (matching the `DailyBar` / `Execution` / `Dividend`
   schema).
 - **Typical outputs:** `report.md` plus, per chart, an `.html` (interactive) and
-  a `.png` (static, via kaleido) in the `--out` directory. The three overview
-  skills instead print a single parseable JSON object to stdout.
+  a `.png` (static, via kaleido) in the `--out` directory. The four live
+  overview skills and the two Flex reporting skills instead print a single
+  parseable JSON object to stdout.
 - **Explicitly out of scope:** placing / modifying / cancelling orders, live
   WhatIf margin checks, real-time market-data streaming, any write path into IB.
   These are **hard boundaries** — do not add them under the banner of
@@ -62,6 +74,7 @@ skills/ib-suite/                        the single installable OpenClaw unit
     requirements.txt                    venv install entry (-e ./ib-common + ib_async/requests/pytest)
     config.example.yaml                 config.yaml template (holds every threshold default)
     ib_common/{config,schema,storage}.py  config loading / pydantic types / data-lake read-write
+    ib_common/{flex,dividend_income}.py   Flex window/date helpers + pure dividend calculations
     ib_common/metrics/{returns,risk}.py   sharpe/sortino/calmar, max_drawdown/var/cvar/hhi
     ib_common/charts/render.py            fig -> {html,png} dual-artifact render
     tests/                              ib-common unit tests + fixtures
@@ -82,6 +95,19 @@ skills/ib-suite/                        the single installable OpenClaw unit
     SKILL.md                            OpenClaw entry: /ib-daily-pnl
     scripts/daily_pnl.py                live read-only today's P&L breakdown -> stdout JSON
     tests/                              daily-pnl tests + fixtures
+  ib-trade-history/
+    SKILL.md                            OpenClaw entry: /ib-trade-history
+    scripts/{trade_history,configure_flex}.py  Flex execution report + safe shared credential setup
+    tests/                              trade-history/configuration tests + fixtures
+  ib-dividend-income/
+    SKILL.md                            OpenClaw entry: /ib-dividend-income
+    flex-query-setup.md                 standalone six-section Activity Flex Query guide
+    scripts/dividend_income.py          Flex-only dividend report -> stdout JSON
+    tests/                              dividend CLI/contract tests + Flex fixture
+  ib-options-overview/
+    SKILL.md                            OpenClaw entry: /ib-options-overview
+    scripts/options_overview.py         live read-only option risk overview -> stdout JSON
+    tests/                              options-overview tests + fixtures
   ib-portfolio-analyst/
     SKILL.md                            OpenClaw entry: /ib-analyze
     scripts/analyze.py                  /ib-analyze entry: read lake -> run diagnostics -> emit report
@@ -103,10 +129,11 @@ gitignored and created at runtime; the skill directory ships only code and
   parsing, metrics, and report assembly all live in `scripts/` and package code;
   `SKILL.md` only invokes `.venv/bin/python {baseDir}/scripts/*.py`.
 - **Reusable, offline-testable pure functions live in `ib-common`.** The **only
-  networked code** (IB connection, Flex HTTP) is isolated in each skill's
-  `scripts/`, hidden behind an injectable `client_factory` / `http_get` so the
-  tests run against fixtures with no network. Every entry script that talks to IB
-  connects with `readonly=True` and imports no order API.
+  networked code** (IB connection, Flex HTTP) is isolated in skill `scripts/`,
+  hidden behind an injectable `client_factory` / `http_get` so tests run against
+  fixtures with no network. Every Gateway client connects with `readonly=True`;
+  the reporting-only Flex clients do not start Gateway. No entry script imports
+  an order API.
 - The `ib_analyst` package is **not installed**; `analyze.py` imports the sibling
   package via `sys.path.insert`. Keep this convention — new diagnostic modules go
   under `ib_analyst/`.
@@ -145,8 +172,9 @@ frontmatter key must exist in the spec's field reference — do not invent keys.
     `requires.config: [config.yaml]`, `os: [darwin, linux]`. `envVars` is optional
     (e.g. `ib-gateway` declares `FLEX_TOKEN` / `FLEX_QUERY_ID` as not required).
 - `name` MUST equal the directory name (`ib-gateway`, `ib-account-overview`,
-  `ib-positions-overview`, `ib-daily-pnl`, `ib-portfolio-analyst`, `ib-suite`) —
-  lowercase and stable.
+  `ib-positions-overview`, `ib-daily-pnl`, `ib-trade-history`,
+  `ib-dividend-income`, `ib-options-overview`, `ib-portfolio-analyst`,
+  `ib-suite`) — lowercase and stable.
 - `description` must convey all three of: what the skill does, when it triggers,
   and the read-only boundary. Every functional `description` starts with
   "Read-only" — preserve that when editing, and keep it narrow enough to avoid
@@ -238,11 +266,11 @@ manual review.
 # First time, or after dependency changes: bootstrap the shared venv (idempotent)
 bash skills/ib-suite/scripts/setup_venv.sh
 
-# Full test run (current baseline: 101 passed)
+# Full test run
 skills/ib-suite/.venv/bin/python -m pytest skills -q
 
-# Test a single skill
-skills/ib-suite/.venv/bin/python -m pytest skills/ib-suite/ib-portfolio-analyst -q
+# Test the dividend-income skill only
+skills/ib-suite/.venv/bin/python -m pytest skills/ib-suite/ib-dividend-income -q
 
 # End-to-end report run (example; substitute real paths). Config and data are
 # workspace-local under .ib-suite/ by convention.
@@ -263,7 +291,7 @@ Manual checklist (cover at least these after a change):
 - You did not commit `.venv/`, `__pycache__/`, `.pytest_cache/`, `*.egg-info/`,
   `data/runs/`, `.ib-suite/`, a real `config.yaml`, or a live snapshot.
 
-> To verify `/ib-sync` (and the three live overview skills) against a real
+> To verify `/ib-sync` (and the four live overview skills) against a real
 > connection instead of fixtures, start IB Gateway locally (paper 4002 / live
 > 4001) with the Read-Only API enabled. That is manual verification, outside the
 > CI/unit-test scope.
@@ -290,8 +318,10 @@ Manual checklist (cover at least these after a change):
 
 - **Never place orders:** do not import or call any IB order API; the connection
   is always `readonly=True`.
-- Do not read / commit / print any token, secret, cookie, or credential; the Flex
-  token is passed via environment only (e.g. `$FLEX_TOKEN`).
+- Do not read / commit / print any token, secret, cookie, or credential. Flex
+  credentials live only in the ignored local config; conversational setup passes
+  a new token through `configure_flex.py --token-stdin`, never on the command
+  line or through an environment fallback.
 - Do not write a local absolute path into a version-controlled file; examples use
   placeholders (`<account>`, `<ts>`).
 - Do not make unnecessary network requests; do not install dependencies from an
