@@ -13,6 +13,7 @@ SUITE_DIR = SKILL_DIR.parent
 SKILL_PATH = SKILL_DIR / "SKILL.md"
 GUIDE_PATH = SKILL_DIR / "flex-query-setup.md"
 INDEX_PATH = SUITE_DIR / "SKILL.md"
+TRADE_SKILL_PATH = SUITE_DIR / "ib-trade-history" / "SKILL.md"
 
 
 def _frontmatter(path: Path) -> tuple[dict[str, Any], str]:
@@ -86,8 +87,18 @@ def test_skill_defines_presentation_and_setup_behavior() -> None:
         assert phrase in text
 
 
+def test_skill_explains_future_expected_and_trailing_history_dates() -> None:
+    """Future expected rows stay in range without inflating annual history."""
+    text = " ".join(SKILL_PATH.read_text(encoding="utf-8").split()).lower()
+
+    assert "expected rows extend through the requested future end date" in text
+    assert "annual trailing history is capped at today" in text
+    assert "future calendar days do not count" in text
+    assert "history_days_covered" in text
+
+
 def test_setup_guide_lists_every_required_flex_section_and_field() -> None:
-    """The standalone guide exactly enumerates the six required Flex sections."""
+    """The guide enumerates six dividend sections plus compatible Trades."""
     text = GUIDE_PATH.read_text(encoding="utf-8")
     sections = {
         "Account Information": ("accountId", "currency"),
@@ -115,6 +126,12 @@ def test_setup_guide_lists_every_required_flex_section_and_field() -> None:
         "Financial Instrument Information": (
             "assetCategory", "symbol", "currency", "listingExchange",
             "description", "conid", "isin", "multiplier", "subCategory",
+        ),
+        "Trades": (
+            "dateTime", "tradeID", "symbol", "buySell", "quantity",
+            "tradePrice", "ibCommission", "currency",
+            "ibCommissionCurrency", "multiplier", "orderType", "exchange",
+            "openCloseIndicator", "fifoPnlRealized", "fxRateToBase",
         ),
     }
 
@@ -155,6 +172,35 @@ def test_setup_guide_covers_safe_registration_and_remote_validation() -> None:
         "does not prove the remote query is correct",
     ):
         assert phrase in text
+
+
+def test_setup_guide_explains_shared_query_compatibility_and_coverage() -> None:
+    """Window guidance separates shared trade use from dividend coverage needs."""
+    text = " ".join(GUIDE_PATH.read_text(encoding="utf-8").split()).lower()
+
+    assert "six dividend sections" in text
+    assert "trades" in text
+    assert "trade-history compatibility" in text
+    assert "7/30/90" in text
+    assert "primarily serve shared trade history" in text
+    assert "dividend income generally requires a `365`" in text
+    assert "older historical requested ranges" in text
+    assert "coverage_required" in text
+
+
+def test_trade_history_setup_keeps_tokens_out_of_command_arguments() -> None:
+    """Trade-history setup passes tokens only through execution-tool stdin."""
+    raw_text = TRADE_SKILL_PATH.read_text(encoding="utf-8")
+    text = " ".join(raw_text.split()).lower()
+
+    assert "--token '<provided-token>'" not in raw_text
+    assert re.search(r"--token(?:\s|=)", raw_text) is None
+    assert "--token-stdin" in text
+    assert "execution tool" in text
+    assert "stdin" in text
+    assert "never place the token in argv or command text" in text
+    assert "explicit confirmation" in text
+    assert "--force" in text
 
 
 def test_docs_preserve_the_flex_only_read_only_boundary() -> None:

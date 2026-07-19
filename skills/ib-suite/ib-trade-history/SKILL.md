@@ -27,27 +27,37 @@ Set `data.base_currency` in `.ib-suite/config.yaml`. Credentials come only from
 `flex.token` and the `flex.query_ids` map (days -> Query ID) in that local
 config; there is no environment-variable fallback. Before running
 `/ib-trade-history`, check those fields without exposing any value. To register
-a window, ask the user for the Flex token and the matching Query ID, then run
-(repeat `--window` for each window you register):
+a window, ask for the matching Query ID and ask for the Flex token only when it
+is not already configured. Invoke the configurator with `--token-stdin` through
+the execution tool (repeat `--window` for each window you register):
 
 ```bash
 {baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \
-  --config .ib-suite/config.yaml --token '<provided-token>' \
+  --config .ib-suite/config.yaml --token-stdin \
   --window '7=<query-id>'
 ```
 
-Register month-to-date and year-to-date windows the same way, using `mtd`/`ytd`
-in place of a day count:
+After starting the process, send the provided token followed by one newline on
+stdin through the execution tool. Never place the token in argv or command text,
+and do not use `printf`, `echo`, an environment variable, or a shell pipeline to
+feed it. The configurator never echoes the value.
+
+When the token is already stored, register month-to-date and year-to-date
+windows without reading or resupplying it, using `mtd`/`ytd` in place of a day
+count:
 
 ```bash
 {baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \
-  --config .ib-suite/config.yaml --token '<provided-token>' \
+  --config .ib-suite/config.yaml \
   --window 'mtd=<query-id>' --window 'ytd=<query-id>'
 ```
 
 Adding a brand-new window does not need `--force`. Overwriting an existing
 `flex.token` or replacing a window whose days-key is already present requires
-`--force`; without it the tool refuses and leaves the config untouched.
+`--force`; without it the tool refuses and leaves the config untouched. Name
+the exact item and obtain explicit confirmation before rerunning with `--force`.
+Never add `--force` to an initial setup command or infer overwrite approval from
+a general request to configure Flex.
 
 This setup persists plaintext credentials only in the ignored local config,
 validates only local persistence, does not validate against the Flex Web Service,

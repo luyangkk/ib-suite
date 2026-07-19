@@ -34,6 +34,11 @@ timezone:
 Reject a resolved start later than the end. Do not reinterpret the requested
 range to fit a configured Flex window.
 
+For a future range, expected rows extend through the requested future end date
+when IBKR provides open accruals in that range. The annual trailing history is
+capped at today, even when `--end-date` is later. Future calendar days do not
+count toward `history_days_covered` or make a 365-day annual estimate complete.
+
 ## Run the command
 
 Run exactly one command with both resolved dates:

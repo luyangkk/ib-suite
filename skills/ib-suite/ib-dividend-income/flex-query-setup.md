@@ -26,14 +26,16 @@ and [Flex Web Service API](https://www.interactivebrokers.com/campus/ibkr-api-pa
 5. Under **General Configuration**, set **Date Format: yyyy-MM-dd**,
    **Time Format: HH:mm:ss**, and **Date/Time Separator: ; (semicolon)**. These
    settings produce timestamps such as `2026-07-19;13:45:00`.
-6. Select **Continue**, review the six sections, fields, accounts, XML output,
+6. Select **Continue**, review all seven sections, fields, accounts, XML output,
    and period, then select **Create**.
 
-## 2. Select all six required sections and fields
+## 2. Select all seven compatibility sections and fields
 
 The names before parentheses are the Client Portal labels; the backticked names
 are the XML attributes validated by the command. Include the section even when
-the current account has no rows for it.
+the current account has no rows for it. The six dividend sections below are
+required by `ib-dividend-income`; the seventh `Trades` section preserves
+trade-history compatibility because both skills share each saved Query ID.
 
 ### Account Information
 
@@ -81,6 +83,17 @@ Listing Exchange (`listingExchange`), Description (`description`), Conid
 (`conid`), ISIN (`isin`), Multiplier (`multiplier`), and Security Subtype / Sub
 Category (`subCategory`) when available.
 
+### Trades
+
+Select Date/Time (`dateTime`), Trade ID (`tradeID`), Symbol (`symbol`), Buy/Sell
+(`buySell`), Quantity (`quantity`), Trade Price (`tradePrice`), IB Commission
+(`ibCommission`), Currency (`currency`), IB Commission Currency
+(`ibCommissionCurrency`), Multiplier (`multiplier`), Order Type (`orderType`),
+Exchange (`exchange`), Open/Close Indicator (`openCloseIndicator`), FIFO P&L
+Realized (`fifoPnlRealized`), and FX Rate to Base (`fxRateToBase`). This section
+is not used to calculate dividend income; it keeps the same shared Flex Query
+valid for `/ib-trade-history`.
+
 ## 3. Create coverage windows
 
 Create one saved query per numeric coverage profile you need, with identical
@@ -88,16 +101,19 @@ sections and formatting:
 
 | Config key | Client Portal Period | Purpose |
 |---|---|---|
-| `7` | Last N Calendar Days: 7 | short recent requests |
-| `30` | Last N Calendar Days: 30 | one-month requests |
-| `90` | Last N Calendar Days: 90 | quarter-scale requests |
+| `7` | Last N Calendar Days: 7 | shared trade-history short requests |
+| `30` | Last N Calendar Days: 30 | shared trade-history month-scale requests |
+| `90` | Last N Calendar Days: 90 | shared trade-history quarter-scale requests |
 | `365` | Last 365 Calendar Days (or Last N Calendar Days: 365) | annual-history estimate and most dividend requests |
 
-The dividend command chooses the smallest configured **numeric** window that
-covers both the requested dates and up to 365 days of estimate history. A `365`
-profile is therefore the practical minimum for a complete annual estimate;
-older requested start dates need a larger numeric Last N Calendar Days query if
-IBKR offers the required coverage. Do not label a shorter query as `365`.
+The `7/30/90` profiles primarily serve shared trade history. Dividend income
+generally requires a `365` profile because its annual estimate needs up to 365
+days of trailing history capped at today. The dividend command chooses the
+smallest configured **numeric** window that covers both the requested dates and
+that trailing-history requirement. Older historical requested ranges may need a
+longer registered numeric window and return `coverage_required` until one is
+available. Do not label a shorter query as `365` or claim future requested days
+make trailing history complete.
 
 Optional Month to Date and Year to Date queries may be registered as `mtd` and
 `ytd` for the shared trade-history configuration. The current dividend command
@@ -188,7 +204,7 @@ report is the end-to-end check.
 - Query not visible: sign in with the username that created it and select the
   same account set. Linked accounts may require the master account.
 - Invalid report or missing section after an edit: confirm **Activity** Flex
-  Query (not Trade Confirmation), **XML**, all six sections, the exact fields,
+  Query (not Trade Confirmation), **XML**, all seven sections, the exact fields,
   and the date/time settings, then run the saved query once in Client Portal.
 - Statement temporarily unavailable: wait and retry once later; Activity Flex
   data updates on IBKR's reporting schedule and is not real-time. Do not poll it
