@@ -195,7 +195,7 @@ def test_cli_writes_windows_and_never_echoes_values(tmp_path):
     assert load_config(path).flex.query_ids == {"7": qid}
 
 
-def test_cli_reads_token_from_stdin_without_echoing_it(tmp_path):
+def test_cli_reads_token_from_stdin_without_echoing_it(tmp_path: Path) -> None:
     """The stdin token path persists one line without exposing the token."""
     path = tmp_path / "config.yaml"
     path.write_text("# local\n", encoding="utf-8")
@@ -214,7 +214,7 @@ def test_cli_reads_token_from_stdin_without_echoing_it(tmp_path):
     assert load_config(path).flex.token == token
 
 
-def test_cli_token_and_stdin_token_are_mutually_exclusive(tmp_path):
+def test_cli_token_and_stdin_token_are_mutually_exclusive(tmp_path: Path) -> None:
     """The CLI rejects supplying a Flex token through both input paths."""
     path = tmp_path / "config.yaml"
     path.write_text("# local\n", encoding="utf-8")
