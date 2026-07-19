@@ -296,6 +296,29 @@ def test_orchestration_redacts_request_exception_secrets(tmp_path):
     assert "secret-body" not in formatted
 
 
+def test_orchestration_preserves_sanitized_ibkr_error(tmp_path):
+    """Known Flex service codes stay actionable without leaking credentials."""
+    token, query_id = "service-token", "service-query"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"data:\n  base_currency: USD\nflex:\n  token: {token}\n"
+        f"  query_ids:\n    7: {query_id}\n",
+        encoding="utf-8",
+    )
+
+    def failed_fetch(_: str, __: str) -> str:
+        raise trade_history.FlexServiceError("1014", "Query is invalid.")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        trade_history.trade_history(
+            str(config), "2026-07-09", "2026-07-11", fetcher=failed_fetch
+        )
+
+    assert str(excinfo.value) == "IBKR Flex error 1014: Query is invalid."
+    assert token not in str(excinfo.value)
+    assert query_id not in str(excinfo.value)
+
+
 def test_orchestration_redacts_parse_error_from_flex_fetcher(tmp_path):
     """Malformed Flex handshake XML is mapped without exposing parser details."""
     config = tmp_path / "config.yaml"

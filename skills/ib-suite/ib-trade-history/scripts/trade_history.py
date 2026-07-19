@@ -15,7 +15,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "ib-gateway" / "scripts"))
 
-from flex_fetch import fetch_flex_report, parse_flex_trade_records
+from flex_fetch import FlexServiceError, fetch_flex_report, parse_flex_trade_records
 from ib_common.config import Config, load_config
 from ib_common.schema import FlexTrade, TradeHistoryReport, TradeHistorySummary
 
@@ -231,6 +231,8 @@ def trade_history(
         )
     try:
         xml_text = fetcher(token, query_id)
+    except FlexServiceError as exc:
+        raise RuntimeError(str(exc)) from None
     except (requests.RequestException, RuntimeError, ET.ParseError, ValueError):
         raise RuntimeError(
             "Flex report retrieval failed; verify the Flex token, Flex Query "
