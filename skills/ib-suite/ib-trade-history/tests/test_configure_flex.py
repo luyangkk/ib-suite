@@ -195,6 +195,52 @@ def test_cli_writes_windows_and_never_echoes_values(tmp_path):
     assert load_config(path).flex.query_ids == {"7": qid}
 
 
+def test_cli_reads_token_from_stdin_without_echoing_it(tmp_path):
+    """The stdin token path persists one line without exposing the token."""
+    path = tmp_path / "config.yaml"
+    path.write_text("# local\n", encoding="utf-8")
+    token = "stdin-token-secret"
+
+    ok = subprocess.run(
+        [sys.executable, str(SPEC), "--config", str(path), "--token-stdin"],
+        input=f"{token}\n",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert ok.returncode == 0
+    assert token not in ok.stdout + ok.stderr
+    assert load_config(path).flex.token == token
+
+
+def test_cli_token_and_stdin_token_are_mutually_exclusive(tmp_path):
+    """The CLI rejects supplying a Flex token through both input paths."""
+    path = tmp_path / "config.yaml"
+    path.write_text("# local\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SPEC),
+            "--config",
+            str(path),
+            "--token",
+            "inline-token",
+            "--token-stdin",
+        ],
+        input="stdin-token\n",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "not allowed with argument" in result.stderr
+    assert "--token" in result.stderr
+    assert "--token-stdin" in result.stderr
+
+
 def test_cli_window_help_documents_period_keys():
     """The --window help advertises the same mtd/ytd format as the error/SKILL.md."""
     help_text = subprocess.run(
@@ -203,4 +249,3 @@ def test_cli_window_help_documents_period_keys():
     ).stdout
     assert "mtd" in help_text
     assert "ytd" in help_text
-

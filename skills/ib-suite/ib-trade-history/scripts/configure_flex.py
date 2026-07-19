@@ -6,6 +6,7 @@ from collections.abc import Mapping
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 
 from ruamel.yaml import YAML
@@ -129,7 +130,13 @@ def main() -> None:
         description="Persist local IBKR Flex credentials for the read-only trade-history skill"
     )
     parser.add_argument("--config", required=True, help="path to config.yaml")
-    parser.add_argument("--token", help="IBKR Flex token")
+    token_group = parser.add_mutually_exclusive_group()
+    token_group.add_argument("--token", help="IBKR Flex token")
+    token_group.add_argument(
+        "--token-stdin",
+        action="store_true",
+        help="read the IBKR Flex token from one stdin line",
+    )
     parser.add_argument(
         "--window", action="append", default=[],
         help="window spec '<days|mtd|ytd>=<query-id>', repeatable",
@@ -140,7 +147,8 @@ def main() -> None:
     args = parser.parse_args()
     try:
         windows = dict(parse_window(spec) for spec in args.window)
-        result = configure_flex(args.config, args.token, windows, args.force)
+        token = sys.stdin.readline().rstrip("\r\n") if args.token_stdin else args.token
+        result = configure_flex(args.config, token, windows, args.force)
     except (FileExistsError, FileNotFoundError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(result))
