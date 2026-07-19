@@ -6,6 +6,7 @@ ib_common rows. Free of charge and covers history beyond the ~7-day
 reqExecutions window.
 """
 from __future__ import annotations
+import re
 import time
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timezone
@@ -28,11 +29,27 @@ class FlexServiceError(RuntimeError):
         super().__init__(f"IBKR Flex error {code}: {message}")
 
 
-def _raise_flex_error(root: ET.Element) -> None:
+def _redact_flex_message(message: str, sensitive_values: tuple[str, ...]) -> str:
+    """Remove request credentials, identifiers, and URLs from a service message."""
+    redacted = " ".join(message.split())
+    for value in sorted(filter(None, sensitive_values), key=len, reverse=True):
+        redacted = redacted.replace(value, "[REDACTED]")
+    redacted = re.sub(r"https?://\S+", "[REDACTED_URL]", redacted)
+    return re.sub(
+        r"(?i)\b(?:t|q)=[^&\s]+", "[REDACTED_PARAMETER]", redacted
+    )
+
+
+def _raise_flex_error(
+    root: ET.Element, sensitive_values: tuple[str, ...] = ()
+) -> None:
     """Raise a sanitized service error when a Version 3 response failed."""
-    code = root.findtext("ErrorCode")
-    if code:
-        message = root.findtext("ErrorMessage") or "Unknown Flex service error."
+    raw_code = root.findtext("ErrorCode")
+    if raw_code:
+        stripped_code = raw_code.strip()
+        code = stripped_code if stripped_code.isdigit() else "unknown"
+        raw_message = root.findtext("ErrorMessage") or "Unknown Flex service error."
+        message = _redact_flex_message(raw_message, sensitive_values)
         raise FlexServiceError(code, message)
 
 
@@ -151,7 +168,7 @@ def fetch_flex_report(token: str, query_id: str, http_get=requests.get,
     )
     send.raise_for_status()
     root = ET.fromstring(send.text)
-    _raise_flex_error(root)
+    _raise_flex_error(root, (token, query_id))
     ref = root.findtext("ReferenceCode")
     url = (
         root.findtext("url")
@@ -161,6 +178,7 @@ def fetch_flex_report(token: str, query_id: str, http_get=requests.get,
     if not ref:
         raise RuntimeError("Flex SendRequest succeeded without a reference code")
 
+    statement_root: ET.Element | None = None
     for _ in range(max_polls):
         stmt = http_get(
             url,
@@ -172,6 +190,10 @@ def fetch_flex_report(token: str, query_id: str, http_get=requests.get,
         if "Statement generation in progress" in stmt.text:
             time.sleep(poll_interval)
             continue
-        _raise_flex_error(statement_root)
+        _raise_flex_error(statement_root, (token, query_id, ref))
         return stmt.text
-    return stmt.text
+    if statement_root is not None:
+        _raise_flex_error(statement_root, (token, query_id, ref))
+    raise FlexServiceError(
+        "1019", "Statement generation did not complete within the polling limit."
+    )

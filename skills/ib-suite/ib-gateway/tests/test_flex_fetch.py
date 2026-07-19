@@ -120,7 +120,9 @@ def test_fetch_flex_report_raises_sanitized_ibkr_error():
     class FakeResp:
         text = (
             "<FlexStatementResponse><Status>Fail</Status>"
-            "<ErrorCode>1014</ErrorCode><ErrorMessage>Query is invalid.</ErrorMessage>"
+            "<ErrorCode>1014</ErrorCode>"
+            "<ErrorMessage>Query secret-query is invalid; "
+            "see https://example.test/?t=secret-token&amp;q=secret-query</ErrorMessage>"
             "<RawSecret>token-and-query-must-not-leak</RawSecret>"
             "</FlexStatementResponse>"
         )
@@ -136,7 +138,85 @@ def test_fetch_flex_report_raises_sanitized_ibkr_error():
             http_get=lambda *_args, **_kwargs: FakeResp(),
         )
 
-    assert str(excinfo.value) == "IBKR Flex error 1014: Query is invalid."
+    assert str(excinfo.value).startswith("IBKR Flex error 1014:")
     assert "secret-token" not in str(excinfo.value)
     assert "secret-query" not in str(excinfo.value)
+    assert "https://" not in str(excinfo.value)
     assert "token-and-query-must-not-leak" not in str(excinfo.value)
+
+
+def test_fetch_flex_report_redacts_get_statement_error_secrets():
+    class FakeResp:
+        def __init__(self, text):
+            self.text = text
+            self.status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+    def fake_get(url, params=None, **_kwargs):
+        if "SendRequest" in url:
+            return FakeResp(
+                "<FlexStatementResponse><Status>Success</Status>"
+                "<ReferenceCode>secret-reference</ReferenceCode>"
+                "<url>https://reports.example/GetStatement</url>"
+                "</FlexStatementResponse>"
+            )
+        return FakeResp(
+            "<FlexStatementResponse><Status>Fail</Status>"
+            "<ErrorCode>1017</ErrorCode>"
+            "<ErrorMessage>Reference secret-reference failed for secret-query "
+            "with secret-token at https://example.test/report</ErrorMessage>"
+            "</FlexStatementResponse>"
+        )
+
+    with pytest.raises(flex.FlexServiceError) as excinfo:
+        flex.fetch_flex_report(
+            "secret-token", "secret-query", http_get=fake_get
+        )
+
+    message = str(excinfo.value)
+    assert message.startswith("IBKR Flex error 1017:")
+    assert "secret-token" not in message
+    assert "secret-query" not in message
+    assert "secret-reference" not in message
+    assert "https://" not in message
+
+
+def test_fetch_flex_report_raises_when_generation_polling_is_exhausted():
+    class FakeResp:
+        def __init__(self, text):
+            self.text = text
+            self.status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+    calls = 0
+
+    def fake_get(url, params=None, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if "SendRequest" in url:
+            return FakeResp(
+                "<FlexStatementResponse><Status>Success</Status>"
+                "<ReferenceCode>REF123</ReferenceCode>"
+                "</FlexStatementResponse>"
+            )
+        return FakeResp(
+            "<FlexStatementResponse><Status>Fail</Status>"
+            "<ErrorCode>1019</ErrorCode>"
+            "<ErrorMessage>Statement generation in progress.</ErrorMessage>"
+            "</FlexStatementResponse>"
+        )
+
+    with pytest.raises(flex.FlexServiceError, match="1019"):
+        flex.fetch_flex_report(
+            "token",
+            "query",
+            http_get=fake_get,
+            poll_interval=0,
+            max_polls=2,
+        )
+
+    assert calls == 3
