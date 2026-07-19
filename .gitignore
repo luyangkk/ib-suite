@@ -8,5 +8,5 @@ data/runs/
 .ib-suite/
 workspace/
 .worktrees/
-docs/superpowers/
 .DS_Store
+.trae/
