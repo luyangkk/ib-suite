@@ -7,7 +7,7 @@ import math
 import sys
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import requests
@@ -16,28 +16,19 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "ib-gateway" / "scripts"))
 
 from flex_fetch import FlexServiceError, fetch_flex_report, parse_flex_trade_records
-from ib_common.config import Config, load_config
+from ib_common.config import load_config
+from ib_common.flex import (
+    parse_iso_date,
+    resolve_date_range,
+    resolve_flex_token,
+    select_numeric_window,
+)
 from ib_common.schema import FlexTrade, TradeHistoryReport, TradeHistorySummary
-
-
-def parse_iso_date(value: str) -> date:
-    """Parse an ISO calendar date or raise an actionable argument error."""
-    try:
-        return date.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError(f"invalid date {value!r}; use YYYY-MM-DD") from exc
 
 
 def resolve_period(start: str | None, end: str | None, today: date) -> tuple[date, date]:
     """Resolve explicit inclusive bounds or the default seven-calendar-day period."""
-    if (start is None) != (end is None):
-        raise ValueError("--start-date and --end-date must be supplied together")
-    if start is None:
-        return today - timedelta(days=6), today
-    start_date, end_date = parse_iso_date(start), parse_iso_date(end)
-    if start_date > end_date:
-        raise ValueError("--start-date must be on or before --end-date")
-    return start_date, end_date
+    return resolve_date_range(start, end, today)
 
 
 def select_flex_window(
@@ -49,22 +40,10 @@ def select_flex_window(
     gap counts today inclusively. When the request predates every window, use
     the largest and return a coverage note instead of dropping data or failing.
     """
-    numeric = {int(k): v for k, v in query_ids.items() if k.isdigit()}
-    if not numeric:
-        raise ValueError(
-            "no Flex windows configured; run configure_flex.py with --window"
-        )
-    gap = (today - start_date).days + 1
-    covering = sorted(days for days in numeric if days >= gap)
-    if covering:
-        chosen = covering[0]
-        return chosen, numeric[chosen], None
-    largest = max(numeric)
-    note = (
-        f"requested start date precedes the largest configured Flex window "
-        f"({largest} days); results may be incomplete"
+    days, query_id, note = select_numeric_window(
+        query_ids, start_date, today, allow_partial=True
     )
-    return largest, numeric[largest], note
+    return int(days), query_id, note
 
 
 def resolve_period_bounds(period: str, today: date) -> tuple[date, date]:
@@ -89,15 +68,6 @@ def select_period_window(
     start_date, _ = resolve_period_bounds(period, today)
     _, query_id, note = select_flex_window(query_ids, start_date, today)
     return query_id, note
-
-
-def resolve_flex_token(cfg: Config) -> str:
-    """Return the Flex token from local configuration or raise actionably."""
-    if cfg.flex.token:
-        return cfg.flex.token
-    raise ValueError(
-        "Flex token is not configured; run configure_flex.py --token before querying"
-    )
 
 
 def _normalize_fx(trades: list[FlexTrade], base_currency: str) -> list[FlexTrade]:
