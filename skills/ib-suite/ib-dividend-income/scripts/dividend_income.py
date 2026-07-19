@@ -28,6 +28,7 @@ from flex_fetch import (  # noqa: E402
 from ib_common.config import load_config  # noqa: E402
 from ib_common.dividend_income import build_dividend_income_report  # noqa: E402
 from ib_common.flex import parse_iso_date, select_flex_window  # noqa: E402
+from ib_common.redaction import redact_account_identifiers  # noqa: E402
 
 LOGGER = logging.getLogger("ib_dividend_income")
 GUIDE = "flex-query-setup.md"
@@ -83,15 +84,7 @@ def _sanitize(message: str, sensitive_values: tuple[str, ...] = ()) -> str:
         "reference_code=[REDACTED]",
         normalized,
     )
-    normalized = re.sub(
-        r"(?i)\baccount(?:[ _-]?id)?(?:\s*[:=]\s*|\s+)[^\s&,;]+",
-        "account_id=[REDACTED]",
-        normalized,
-    )
-    normalized = re.sub(
-        r"\b(?:DU|U|D|F)\d{4,}\b", "[REDACTED_ACCOUNT]", normalized
-    )
-    return normalized
+    return redact_account_identifiers(normalized)
 
 
 def _log(

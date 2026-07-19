@@ -24,6 +24,7 @@ from ib_common.schema import (
 
 
 _EventKey: TypeAlias = tuple[str, str, str, date, date]
+_AccrualSecondaryKey: TypeAlias = tuple[str, str, str, date, date]
 _CashIdentity: TypeAlias = tuple[str, str, str]
 _LifecycleAmbiguity: TypeAlias = tuple[str, date]
 _MatchRank: TypeAlias = tuple[int, int]
@@ -108,6 +109,19 @@ def _event_key(accrual: FlexDividendAccrual) -> _EventKey:
     )
 
 
+def _accrual_secondary_key(
+    accrual: FlexDividendAccrual,
+) -> _AccrualSecondaryKey:
+    """Return the conid-independent identity used for safe lifecycle fallback."""
+    return (
+        accrual.account_id,
+        accrual.currency.upper(),
+        _normalized_symbol(accrual.symbol),
+        accrual.ex_date,
+        accrual.pay_date,
+    )
+
+
 def _sum_optional(
     rows: list[FlexDividendAccrual], field_name: str
 ) -> float | None:
@@ -121,6 +135,7 @@ def _reduce_accrual_lifecycle(
     rows: list[FlexDividendAccrual],
     *,
     confirmed_cash: list[FlexCashTransaction] | None = None,
+    limitations: list[str] | None = None,
 ) -> list[FlexDividendAccrual]:
     """Collapse accrual rows, retaining payout reversals proven by cash."""
     unique_rows: list[FlexDividendAccrual] = []
@@ -131,9 +146,44 @@ def _reduce_accrual_lifecycle(
             seen.add(fingerprint)
             unique_rows.append(row)
 
+    raw_groups: dict[_EventKey, list[FlexDividendAccrual]] = defaultdict(list)
+    for row in unique_rows:
+        raw_groups[_event_key(row)].append(row)
+
+    conid_keys_by_secondary: dict[
+        _AccrualSecondaryKey, set[_EventKey]
+    ] = defaultdict(set)
+    for event_key, event_rows in raw_groups.items():
+        if event_key[1].startswith("CONID:"):
+            for row in event_rows:
+                conid_keys_by_secondary[_accrual_secondary_key(row)].add(
+                    event_key
+                )
+    coalesced_targets: dict[_EventKey, _EventKey] = {}
+    for event_key, event_rows in raw_groups.items():
+        if not event_key[1].startswith("SYMBOL:"):
+            continue
+        conid_keys = conid_keys_by_secondary.get(
+            _accrual_secondary_key(event_rows[0]), set()
+        )
+        if len(conid_keys) == 1:
+            coalesced_targets[event_key] = next(iter(conid_keys))
+
     groups: dict[_EventKey, list[FlexDividendAccrual]] = defaultdict(list)
     for row in unique_rows:
-        groups[_event_key(row)].append(row)
+        event_key = _event_key(row)
+        groups[coalesced_targets.get(event_key, event_key)].append(row)
+    for event_key, event_rows in groups.items():
+        merged_rows: list[FlexDividendAccrual] = []
+        seen_facts: set[str] = set()
+        for row in event_rows:
+            fingerprint = row.model_copy(
+                update={"conid": None}
+            ).model_dump_json()
+            if fingerprint not in seen_facts:
+                seen_facts.add(fingerprint)
+                merged_rows.append(row)
+        groups[event_key] = merged_rows
 
     confirmed_by_key: dict[_EventKey, list[FlexCashTransaction]] = defaultdict(list)
     if confirmed_cash:
@@ -182,8 +232,12 @@ def _reduce_accrual_lifecycle(
     reduced: list[FlexDividendAccrual] = []
     for event_key, event_rows in groups.items():
         representative = event_rows[-1]
+        known_conid = next(
+            (row.conid for row in reversed(event_rows) if row.conid), None
+        )
         combined = representative.model_copy(
             update={
+                "conid": known_conid,
                 "quantity": _sum_optional(event_rows, "quantity"),
                 "tax": _sum_optional(event_rows, "tax"),
                 "fee": _sum_optional(event_rows, "fee"),
@@ -219,21 +273,30 @@ def _reduce_accrual_lifecycle(
         cash_amounts = [
             cash.amount for cash in event_cash if cash.amount is not None
         ]
+        postings_with_amount = [
+            row for row in positive_postings if row.gross_amount is not None
+        ]
         amount_matches = [
             row
-            for row in positive_postings
-            if row.gross_amount is not None
-            and any(
-                isclose(
-                    row.gross_amount,
-                    cash_amount,
-                    rel_tol=0.0,
-                    abs_tol=1e-9,
-                )
+            for row in postings_with_amount
+            if any(
+                not _materially_different(row.gross_amount, cash_amount)
                 for cash_amount in cash_amounts
             )
         ]
-        candidates = amount_matches or positive_postings
+        if cash_amounts and postings_with_amount and not amount_matches:
+            if limitations is not None:
+                limitations.append(
+                    f"Cash-confirmed dividend for {representative.symbol.strip()} "
+                    "had a gross-amount discrepancy with its zeroed accrual "
+                    "lifecycle; cash-only facts were retained."
+                )
+            continue
+        candidates = (
+            amount_matches
+            if cash_amounts and postings_with_amount
+            else positive_postings
+        )
         retained = max(
             enumerate(candidates),
             key=lambda item: (
@@ -1214,6 +1277,7 @@ def build_dividend_income_report(
     accruals = _reduce_accrual_lifecycle(
         dataset.dividend_accruals,
         confirmed_cash=dividend_cash,
+        limitations=limitations,
     )
     realized_associations = _associate_cash_to_accruals(dividend_cash, accruals)
     withholding_associations = _associate_withholdings(

@@ -488,6 +488,146 @@ def test_reconcile_po_re_without_confirmed_cash_remains_cancelled() -> None:
     assert report.annual_estimate.estimated_base_gross == 0.0
 
 
+def test_mixed_conid_po_re_without_cash_cancels_annual_accrual() -> None:
+    """A conidless reversal cancels its unique conid posting by secondary key."""
+    posting = _accrual(conid="1")
+    reversal = posting.model_copy(
+        update={
+            "conid": None,
+            "quantity": -100.0,
+            "tax": 3.75,
+            "gross_rate": -0.25,
+            "gross_amount": -25.0,
+            "net_amount": -21.25,
+            "code": "RE",
+        }
+    )
+
+    report = build_dividend_income_report(
+        _dataset(accruals=[posting, reversal], positions=[_position(conid="1")]),
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        history_start_date=date(2025, 8, 1),
+    )
+
+    assert report.realized_dividends == []
+    assert report.annual_estimate.holdings[0].trailing_gross_rate == 0.0
+    assert report.annual_estimate.estimated_base_gross == 0.0
+
+
+def test_mixed_conid_po_re_with_cash_preserves_confirmed_payout() -> None:
+    """Cash still proves a payout after its conidless reversal is coalesced."""
+    posting = _accrual(conid="1")
+    payout_reversal = posting.model_copy(
+        update={
+            "conid": None,
+            "accrual_date": posting.pay_date,
+            "quantity": -100.0,
+            "tax": 3.75,
+            "gross_rate": -0.25,
+            "gross_amount": -25.0,
+            "net_amount": -21.25,
+            "code": "RE",
+            "report_date": posting.pay_date,
+        }
+    )
+
+    report = build_dividend_income_report(
+        _dataset(
+            cash=[_cash(conid="1", amount=25.0)],
+            accruals=[posting, payout_reversal],
+            positions=[_position(conid="1")],
+        ),
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        history_start_date=date(2025, 8, 1),
+    )
+
+    assert report.realized_dividends[0].gross == 25.0
+    assert report.realized_dividends[0].quantity == 100.0
+    assert report.annual_estimate.holdings[0].trailing_gross_rate == 0.25
+
+
+def test_conidless_reversal_stays_ambiguous_across_multiple_conids() -> None:
+    """A secondary-key fallback never chooses between two possible conid events."""
+    first_posting = _accrual(conid="1")
+    second_posting = _accrual(conid="2")
+    reversal = first_posting.model_copy(
+        update={
+            "conid": None,
+            "quantity": -100.0,
+            "tax": 3.75,
+            "gross_rate": -0.25,
+            "gross_amount": -25.0,
+            "net_amount": -21.25,
+            "code": "RE",
+        }
+    )
+
+    report = build_dividend_income_report(
+        _dataset(
+            accruals=[first_posting, second_posting, reversal],
+            positions=[_position(conid="1"), _position(conid="2")],
+        ),
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        history_start_date=date(2025, 8, 1),
+    )
+
+    assert [
+        holding.trailing_gross_rate
+        for holding in report.annual_estimate.holdings
+    ] == [0.25, 0.25]
+    assert report.annual_estimate.estimated_base_gross == 50.0
+
+
+def test_zeroed_lifecycle_cash_amount_disagreement_keeps_cash_only_facts() -> None:
+    """Known unequal accrual and cash gross amounts cannot revive stale economics."""
+    posting = _accrual(gross=25.0)
+    payout_reversal = posting.model_copy(
+        update={
+            "accrual_date": posting.pay_date,
+            "quantity": -100.0,
+            "tax": 3.75,
+            "gross_rate": -0.25,
+            "gross_amount": -25.0,
+            "net_amount": -21.25,
+            "code": "RE",
+            "report_date": posting.pay_date,
+        }
+    )
+
+    report = build_dividend_income_report(
+        _dataset(
+            cash=[_cash(amount=30.0)],
+            accruals=[posting, payout_reversal],
+            positions=[_position()],
+        ),
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        history_start_date=date(2025, 8, 1),
+    )
+
+    realized = report.realized_dividends[0]
+    assert realized.gross is None
+    assert realized.quantity is None
+    assert realized.withholding_tax is None
+    assert realized.fee is None
+    assert realized.net == 30.0
+    assert report.summary.realized.gross is None
+    assert report.annual_estimate.holdings[0].trailing_gross_rate == 0.0
+    assert report.annual_estimate.estimated_base_gross == 0.0
+    assert any(
+        "gross-amount discrepancy" in limitation.lower()
+        and "cash-only" in limitation.lower()
+        for limitation in report.data_limitations
+    )
+    assert any(
+        "no reliable accrual match" in limitation.lower()
+        for limitation in report.data_limitations
+    )
+
+
 def test_reconcile_cash_confirmed_po_re_uses_missing_conid_symbol_fallback() -> None:
     """Cash can prove a zeroed payout when only the accrual omits its conid."""
     posting = _accrual(conid=None)

@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 from datetime import date, datetime, timezone
 import requests
 
+from ib_common.redaction import redact_account_identifiers
 from ib_common.schema import (
     Dividend,
     Execution,
@@ -66,11 +67,7 @@ def _redact_flex_message(message: str, sensitive_values: tuple[str, ...]) -> str
     redacted = re.sub(
         r"(?i)\b(?:t|q)=[^&\s]+", "[REDACTED_PARAMETER]", redacted
     )
-    return re.sub(
-        r"(?i)\baccount(?:[ _-]?id)?(?:\s*[:=]\s*|\s+)[^\s&,;]+",
-        "account_id=[REDACTED]",
-        redacted,
-    )
+    return redact_account_identifiers(redacted)
 
 
 def _raise_flex_error(

@@ -5,8 +5,10 @@ One config.yaml drives every skill. Unspecified fields fall back to safe
 defaults defined here (read-only, paper port, 24h freshness).
 """
 from __future__ import annotations
+from collections.abc import Mapping
 from pathlib import Path
 from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -72,9 +74,16 @@ class Config(BaseModel):
 def load_config(path: str | Path) -> Config:
     """Load and validate config.yaml, applying defaults for missing keys."""
     yaml = YAML(typ="safe")
-    with open(path, "r", encoding="utf-8") as f:
-        raw = yaml.load(f) or {}
-    return Config(**raw)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = yaml.load(f)
+    except (YAMLError, TypeError):
+        raise ValueError("configuration YAML is malformed") from None
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, Mapping):
+        raise ValueError("configuration root must be a mapping")
+    return Config(**dict(raw))
 
 
 def resolve_base_currency(cfg: Config, account_base: str | None) -> str:

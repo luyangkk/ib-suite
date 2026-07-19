@@ -17,7 +17,7 @@ IB_SUITE_DIR = SKILL_DIR.parent
 SCRIPTS_DIR = SKILL_DIR / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from dividend_income import dividend_income
+from dividend_income import _sanitize, dividend_income
 
 
 @pytest.fixture
@@ -330,11 +330,13 @@ def test_cli_flex_error_is_nonzero_json_and_sanitized(tmp_path: Path) -> None:
     token = "TOKEN-SHOULD-NOT-LEAK"
     query_id = "QUERY-SHOULD-NOT-LEAK"
     reference = "REFERENCE-SHOULD-NOT-LEAK"
-    account = "MASTER-ABC-999"
+    account_number = "MASTER-ABC-999"
+    acct_id = "ADVISOR-XYZ-777"
     config = _write_config(tmp_path, token=token, query_ids={"365": query_id})
     fixture = Path(__file__).parent / "fixtures" / "flex_dividend_income_sample.xml"
     message = (
-        f"accountId={account} Reference Code {reference} "
+        f"Account Number: {account_number} acctId={acct_id} "
+        f"Reference Code {reference} "
         f"https://example.invalid/report?t={token}&q={query_id}"
     )
 
@@ -346,9 +348,36 @@ def test_cli_flex_error_is_nonzero_json_and_sanitized(tmp_path: Path) -> None:
     assert completed.returncode != 0
     assert payload["status"] == "error"
     assert completed.stdout.count("\n") == 1
-    for secret in (token, query_id, reference, account, "https://", "?t=", "&q="):
+    for secret in (
+        token,
+        query_id,
+        reference,
+        account_number,
+        acct_id,
+        "https://",
+        "?t=",
+        "&q=",
+    ):
         assert secret not in completed.stdout
         assert secret not in completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("message", "secret"),
+    [
+        ("Account Number: MASTER-ABC-999", "MASTER-ABC-999"),
+        ("Account No=MASTER-NO-888", "MASTER-NO-888"),
+        ("acctId=ADVISOR-XYZ-777", "ADVISOR-XYZ-777"),
+        ("accountId=INSTITUTIONAL-66", "INSTITUTIONAL-66"),
+        ("retail account U1234567", "U1234567"),
+    ],
+)
+def test_cli_sanitizer_redacts_account_identifier_forms(
+    message: str,
+    secret: str,
+) -> None:
+    """Every supported account label and retail identifier is removed."""
+    assert secret not in _sanitize(message)
 
 
 @pytest.mark.parametrize("failure_kind", ["request", "parse"])
@@ -408,6 +437,35 @@ def test_cli_malformed_query_map_is_structured_and_never_leaks(
     for secret in (token, sentinel):
         assert secret not in completed.stdout
         assert secret not in completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("raw_config", "secret"),
+    [
+        ("flex: [YAML-SECRET-SHOULD-NOT-LEAK\n", "YAML-SECRET-SHOULD-NOT-LEAK"),
+        ("- TOPLEVEL-SECRET-SHOULD-NOT-LEAK\n", "TOPLEVEL-SECRET-SHOULD-NOT-LEAK"),
+    ],
+)
+def test_cli_invalid_yaml_shapes_are_one_safe_json_object(
+    tmp_path: Path,
+    raw_config: str,
+    secret: str,
+) -> None:
+    """Parser and top-level shape errors stay inside the local-input boundary."""
+    config = tmp_path / "config.yaml"
+    config.write_text(raw_config, encoding="utf-8")
+    fixture = Path(__file__).parent / "fixtures" / "flex_dividend_income_sample.xml"
+
+    completed = _run_cli(config, fixture)
+
+    assert completed.returncode != 0
+    assert completed.stdout.count("\n") == 1
+    payload = json.loads(completed.stdout)
+    assert payload["status"] == "error"
+    assert payload["message"] == "Invalid local configuration or date range"
+    assert "Traceback" not in completed.stderr
+    assert secret not in completed.stdout
+    assert secret not in completed.stderr
 
 
 def test_cli_every_payload_correlates_stdout_and_stderr_run_id(

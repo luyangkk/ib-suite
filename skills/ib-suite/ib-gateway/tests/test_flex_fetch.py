@@ -380,6 +380,24 @@ def test_fetch_flex_report_raises_sanitized_ibkr_error():
     assert "token-and-query-must-not-leak" not in str(excinfo.value)
 
 
+@pytest.mark.parametrize(
+    ("message", "secret"),
+    [
+        ("Account Number: MASTER-ABC-999", "MASTER-ABC-999"),
+        ("Account No=MASTER-NO-888", "MASTER-NO-888"),
+        ("acctId=ADVISOR-XYZ-777", "ADVISOR-XYZ-777"),
+        ("accountId=INSTITUTIONAL-66", "INSTITUTIONAL-66"),
+        ("retail account DU1234567", "DU1234567"),
+    ],
+)
+def test_flex_error_sanitizer_redacts_account_identifier_forms(
+    message: str,
+    secret: str,
+) -> None:
+    """Service errors remove labelled and retail account identifiers."""
+    assert secret not in flex._redact_flex_message(message, ())
+
+
 def test_fetch_flex_report_redacts_get_statement_error_secrets():
     class FakeResp:
         def __init__(self, text):
