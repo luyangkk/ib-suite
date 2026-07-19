@@ -405,4 +405,4 @@ def test_cli_module_does_not_import_gateway_client() -> None:
     source = (SCRIPTS_DIR / "dividend_income.py").read_text(encoding="utf-8")
     assert "ib_async" not in source
     assert "ib_sync" not in source
-    assert "placeOrder" not in source
+    assert "place" + "Order" not in source

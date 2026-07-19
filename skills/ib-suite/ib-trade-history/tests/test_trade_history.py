@@ -254,10 +254,11 @@ def test_skill_guides_window_registration_and_force_replacement():
     skill = (Path(__file__).parent.parent / "SKILL.md").read_text(encoding="utf-8")
     register = (
         "{baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \\\n"
-        "  --config .ib-suite/config.yaml --token '<provided-token>' \\\n"
+        "  --config .ib-suite/config.yaml --token-stdin \\\n"
         "  --window '7=<query-id>'"
     )
     assert register in skill
+    assert "--token '<provided-token>'" not in skill
     assert "--force" in skill
     assert "smallest configured window" in skill
 
