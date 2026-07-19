@@ -851,16 +851,16 @@ def _annual_estimate(
     *,
     dataset: FlexDividendDataset,
     accruals: list[FlexDividendAccrual],
-    end_date: date,
+    history_end_date: date,
     history_start_date: date,
     limitations: list[str],
 ) -> AnnualDividendEstimate:
     """Estimate annual holding income from unique trailing positive accrual rates."""
-    trailing_start = end_date - timedelta(days=364)
+    trailing_start = history_end_date - timedelta(days=364)
     window_accruals = [
         row
         for row in accruals
-        if trailing_start <= row.ex_date <= end_date
+        if trailing_start <= row.ex_date <= history_end_date
     ]
     trailing_rate_accruals = [
         row
@@ -885,7 +885,7 @@ def _annual_estimate(
         effective_tax_rate = _effective_tax_rate(
             symbol=position.symbol,
             trailing_start=trailing_start,
-            end_date=end_date,
+            end_date=history_end_date,
             cash_rows=dataset.cash_transactions,
             accruals=window_accruals,
         )
@@ -965,7 +965,7 @@ def _annual_estimate(
         and eligible_base_market_value > 0
         else None
     )
-    history_days = _history_days_covered(history_start_date, end_date)
+    history_days = _history_days_covered(history_start_date, history_end_date)
     return AnnualDividendEstimate(
         holdings=holdings,
         estimated_base_gross=estimated_base_gross,
@@ -1051,14 +1051,18 @@ def build_dividend_income_report(
     end_date: date,
     coverage_note: str | None = None,
     history_start_date: date | None = None,
+    history_end_date: date | None = None,
 ) -> DividendIncomeReport:
     """Build a deterministic dividend report without I/O or external state.
 
     ``history_start_date`` is the theoretical inclusive beginning of the selected
     Flex window. It defaults to ``start_date`` for compatibility with callers that
-    only need the original four-argument interface.
+    only need the original four-argument interface. ``history_end_date`` bounds
+    annual trailing facts separately from the requested output range and defaults
+    to ``end_date``.
     """
     effective_history_start = history_start_date or start_date
+    effective_history_end = history_end_date or end_date
     limitations: list[str] = []
     accruals = _reduce_accrual_lifecycle(dataset.dividend_accruals)
     dividend_cash = _reduce_dividend_cash_lifecycle(
@@ -1161,7 +1165,7 @@ def build_dividend_income_report(
         annual_estimate=_annual_estimate(
             dataset=dataset,
             accruals=accruals,
-            end_date=end_date,
+            history_end_date=effective_history_end,
             history_start_date=effective_history_start,
             limitations=limitations,
         ),

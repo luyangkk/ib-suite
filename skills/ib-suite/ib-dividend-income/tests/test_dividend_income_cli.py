@@ -79,6 +79,36 @@ def test_orchestration_fetches_once_with_smallest_estimate_window(
     assert result["run_id"] == "test-run"
 
 
+def test_orchestration_future_end_uses_today_for_annual_history(
+    tmp_path: Path, sample_xml: str
+) -> None:
+    """Future expected range uses a strict annual-history window through today."""
+    config = _write_config(
+        tmp_path,
+        query_ids={"340": "QUERY-340", "365": "QUERY-365"},
+    )
+    calls: list[tuple[str, str]] = []
+
+    def fetcher(token: str, query_id: str) -> str:
+        """Record the selected future-range query and return the Flex fixture."""
+        calls.append((token, query_id))
+        return sample_xml
+
+    result = dividend_income(
+        str(config),
+        "2026-08-01",
+        "2026-08-31",
+        fetcher=fetcher,
+        today=date(2026, 7, 31),
+        run_id="future-range-run",
+    )
+
+    assert calls == [("TOKEN-SHOULD-NOT-LEAK", "QUERY-365")]
+    assert [line["symbol"] for line in result["expected_dividends"]] == ["SGFUND"]
+    assert result["annual_estimate"]["history_days_covered"] == 365
+    assert result["annual_estimate"]["complete_history"] is True
+
+
 def test_setup_missing_token_returns_stable_guide(tmp_path: Path) -> None:
     """A missing token yields a structured setup state without fetching."""
     config = _write_config(tmp_path, token=None)

@@ -1202,3 +1202,46 @@ def test_annual_estimate_marks_a_120_day_observed_run_rate_incomplete() -> None:
     assert estimate.estimated_base_gross == 50.0
     assert estimate.history_days_covered == 120
     assert estimate.complete_history is False
+
+
+def test_future_requested_end_uses_separate_annual_history_cutoff() -> None:
+    """Future expected rows remain visible while annual history stops at today."""
+    today = date(2026, 7, 31)
+    future_end = date(2026, 8, 31)
+    historical = _accrual(
+        ex_date=date(2025, 9, 1),
+        pay_date=date(2025, 9, 8),
+        gross_rate=0.2,
+        gross=20.0,
+        tax=None,
+        net=None,
+    )
+    future = _accrual(
+        ex_date=date(2026, 8, 10),
+        pay_date=date(2026, 8, 15),
+        gross_rate=0.9,
+        gross=90.0,
+        tax=None,
+        net=None,
+    )
+    dataset = _dataset(
+        accruals=[historical, future],
+        open_accruals=[future.model_copy()],
+        positions=[_position()],
+    )
+
+    report = build_dividend_income_report(
+        dataset,
+        date(2026, 8, 1),
+        future_end,
+        history_start_date=date(2025, 9, 1),
+        history_end_date=today,
+    )
+
+    assert [line.payment_date for line in report.expected_dividends] == [
+        date(2026, 8, 15)
+    ]
+    estimate = report.annual_estimate
+    assert estimate.holdings[0].trailing_gross_rate == pytest.approx(0.2)
+    assert estimate.history_days_covered == 334
+    assert estimate.complete_history is False

@@ -159,7 +159,11 @@ def dividend_income(
     if start_date > end_date:
         raise ValueError("--start-date must be on or before --end-date")
     resolved_today = today or date.today()
-    required_start = min(start_date, end_date - timedelta(days=364))
+    history_end_date = min(end_date, resolved_today)
+    required_start = min(
+        start_date,
+        history_end_date - timedelta(days=364),
+    )
     required_days = (resolved_today - required_start).days + 1
     try:
         window, query_id, _ = select_numeric_window(
@@ -244,6 +248,7 @@ def dividend_income(
         start_date,
         end_date,
         history_start_date=theoretical_start,
+        history_end_date=history_end_date,
     ).model_dump(mode="json")
     report["run_id"] = resolved_run_id
     elapsed_ms = round((time.monotonic() - started) * 1000)
