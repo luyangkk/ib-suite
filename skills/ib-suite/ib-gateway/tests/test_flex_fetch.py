@@ -79,20 +79,64 @@ def test_parse_flex_trade_records_rejects_non_positive_multiplier():
         flex.parse_flex_trade_records(xml_text.replace('multiplier="100"', 'multiplier="0"'))
 
 
-def test_fetch_flex_report_two_step_handshake():
+@pytest.mark.parametrize("url_tag", ["url", "Url"])
+def test_fetch_flex_report_uses_current_endpoint_headers_and_response_url(url_tag):
     class FakeResp:
-        def __init__(self, text): self.text = text; self.status_code = 200
-        def raise_for_status(self): pass
+        def __init__(self, text):
+            self.text = text
+            self.status_code = 200
+
+        def raise_for_status(self):
+            pass
 
     calls = []
-    def fake_get(url, params=None, **kw):
-        calls.append((url, params))
+
+    def fake_get(url, params=None, **kwargs):
+        calls.append((url, params, kwargs))
         if "SendRequest" in url:
-            return FakeResp("<FlexStatementResponse><Status>Success</Status>"
-                            "<ReferenceCode>REF123</ReferenceCode>"
-                            "<Url>https://x/GetStatement</Url></FlexStatementResponse>")
+            return FakeResp(
+                "<FlexStatementResponse><Status>Success</Status>"
+                "<ReferenceCode>REF123</ReferenceCode>"
+                f"<{url_tag}>https://reports.example/GetStatement</{url_tag}>"
+                "</FlexStatementResponse>"
+            )
         return FakeResp("<FlexQueryResponse>OK</FlexQueryResponse>")
 
     out = flex.fetch_flex_report("TOK", "Q1", http_get=fake_get)
+
     assert "FlexQueryResponse" in out
-    assert len(calls) == 2                       # SendRequest then GetStatement
+    assert calls[0][0] == (
+        "https://ndcdyn.interactivebrokers.com/AccountManagement/"
+        "FlexWebService/SendRequest"
+    )
+    assert calls[1][0] == "https://reports.example/GetStatement"
+    assert all(
+        call[2]["headers"]["User-Agent"] == "Python/3 ib-suite/0.1"
+        for call in calls
+    )
+
+
+def test_fetch_flex_report_raises_sanitized_ibkr_error():
+    class FakeResp:
+        text = (
+            "<FlexStatementResponse><Status>Fail</Status>"
+            "<ErrorCode>1014</ErrorCode><ErrorMessage>Query is invalid.</ErrorMessage>"
+            "<RawSecret>token-and-query-must-not-leak</RawSecret>"
+            "</FlexStatementResponse>"
+        )
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+    with pytest.raises(flex.FlexServiceError) as excinfo:
+        flex.fetch_flex_report(
+            "secret-token",
+            "secret-query",
+            http_get=lambda *_args, **_kwargs: FakeResp(),
+        )
+
+    assert str(excinfo.value) == "IBKR Flex error 1014: Query is invalid."
+    assert "secret-token" not in str(excinfo.value)
+    assert "secret-query" not in str(excinfo.value)
+    assert "token-and-query-must-not-leak" not in str(excinfo.value)

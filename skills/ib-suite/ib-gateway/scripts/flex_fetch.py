@@ -13,7 +13,27 @@ import requests
 
 from ib_common.schema import Dividend, Execution, FlexTrade
 
-_FLEX_BASE = "https://gdcdyn.interactivebrokers.com/Universal/servlet"
+_FLEX_BASE = (
+    "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService"
+)
+_FLEX_HEADERS = {"User-Agent": "Python/3 ib-suite/0.1"}
+
+
+class FlexServiceError(RuntimeError):
+    """A credential-safe error returned by IBKR Flex Version 3."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(f"IBKR Flex error {code}: {message}")
+
+
+def _raise_flex_error(root: ET.Element) -> None:
+    """Raise a sanitized service error when a Version 3 response failed."""
+    code = root.findtext("ErrorCode")
+    if code:
+        message = root.findtext("ErrorMessage") or "Unknown Flex service error."
+        raise FlexServiceError(code, message)
 
 
 def _parse_date(s: str) -> date:
@@ -124,19 +144,34 @@ def parse_flex_trades(xml_text: str) -> list[Execution]:
 def fetch_flex_report(token: str, query_id: str, http_get=requests.get,
                       poll_interval: float = 1.0, max_polls: int = 10) -> str:
     """Run the Flex two-step handshake and return raw statement XML."""
-    send = http_get(f"{_FLEX_BASE}/FlexStatementService.SendRequest",
-                    params={"t": token, "q": query_id, "v": "3"})
+    send = http_get(
+        f"{_FLEX_BASE}/SendRequest",
+        params={"t": token, "q": query_id, "v": "3"},
+        headers=_FLEX_HEADERS,
+    )
     send.raise_for_status()
     root = ET.fromstring(send.text)
+    _raise_flex_error(root)
     ref = root.findtext("ReferenceCode")
-    url = root.findtext("Url") or f"{_FLEX_BASE}/FlexStatementService.GetStatement"
+    url = (
+        root.findtext("url")
+        or root.findtext("Url")
+        or f"{_FLEX_BASE}/GetStatement"
+    )
     if not ref:
-        raise RuntimeError(f"Flex SendRequest failed: {send.text[:200]}")
+        raise RuntimeError("Flex SendRequest succeeded without a reference code")
 
     for _ in range(max_polls):
-        stmt = http_get(url, params={"t": token, "q": ref, "v": "3"})
+        stmt = http_get(
+            url,
+            params={"t": token, "q": ref, "v": "3"},
+            headers=_FLEX_HEADERS,
+        )
         stmt.raise_for_status()
-        if "Statement generation in progress" not in stmt.text:
-            return stmt.text
-        time.sleep(poll_interval)
+        statement_root = ET.fromstring(stmt.text)
+        if "Statement generation in progress" in stmt.text:
+            time.sleep(poll_interval)
+            continue
+        _raise_flex_error(statement_root)
+        return stmt.text
     return stmt.text
