@@ -17,14 +17,21 @@ from ib_common.config import load_config
 _CONFIG_ERROR = "configuration could not be read or validated; repair config.yaml and retry"
 
 
+_WINDOW_FORMAT = (
+    "window must use the format <days|mtd|ytd>=<id>, e.g. 7=1575544 or ytd=1590003"
+)
+
+
 def parse_window(spec: str) -> tuple[str, str]:
-    """Parse a '<days>=<query-id>' window spec into (day-string, query_id)."""
-    days_text, sep, query_id = spec.partition("=")
-    key = days_text.strip()
+    """Parse a '<days|mtd|ytd>=<query-id>' spec into (key, query_id)."""
+    key_text, sep, query_id = spec.partition("=")
+    key = key_text.strip().lower()
     if not sep or not key or not query_id.strip():
-        raise ValueError("window must use the format <days>=<id>, e.g. 7=1575544")
+        raise ValueError(_WINDOW_FORMAT)
+    if key in ("mtd", "ytd"):
+        return key, query_id.strip()
     if not key.isdigit() or int(key) <= 0:
-        raise ValueError("window must use the format <days>=<id>, e.g. 7=1575544")
+        raise ValueError(_WINDOW_FORMAT)
     return key, query_id.strip()
 
 

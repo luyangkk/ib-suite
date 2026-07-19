@@ -30,11 +30,49 @@ def test_parse_window_accepts_days_equals_id():
     assert configure_flex.parse_window("7=q7") == ("7", "q7")
 
 
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [("mtd=q1", ("mtd", "q1")), ("YTD=q2", ("ytd", "q2")), ("Mtd=q3", ("mtd", "q3"))],
+)
+def test_parse_window_accepts_period_keys(spec, expected):
+    """Period specs parse case-insensitively into lowercase period keys."""
+    configure_flex = load_module()
+    assert configure_flex.parse_window(spec) == expected
+
+
+def test_configure_flex_writes_and_orders_period_windows(tmp_path):
+    """Numeric windows sort first by value, then period windows lexically."""
+    configure_flex = load_module()
+    path = tmp_path / "config.yaml"
+    path.write_text("# local\n", encoding="utf-8")
+
+    configure_flex.configure_flex(
+        path, token="t", windows={"30": "q30", "ytd": "qy", "7": "q7", "mtd": "qm"}
+    )
+
+    cfg = load_config(path)
+    assert cfg.flex.query_ids == {"7": "q7", "30": "q30", "mtd": "qm", "ytd": "qy"}
+    assert list(cfg.flex.query_ids) == ["7", "30", "mtd", "ytd"]
+
+
+def test_configure_flex_overwriting_period_requires_force(tmp_path):
+    """Replacing an existing period key needs an explicit --force."""
+    configure_flex = load_module()
+    path = tmp_path / "config.yaml"
+    path.write_text("flex:\n  token: t\n  query_ids:\n    ytd: qy\n", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="--force"):
+        configure_flex.configure_flex(path, windows={"ytd": "qy-new"})
+
+    configure_flex.configure_flex(path, windows={"ytd": "qy-new"}, force=True)
+    assert load_config(path).flex.query_ids == {"ytd": "qy-new"}
+
+
 @pytest.mark.parametrize("spec", ["7", "=q7", "x=q7", "7=", "0=q7", "-3=q7"])
 def test_parse_window_rejects_malformed_spec(spec):
     """Malformed window specs fail with an actionable format hint."""
     configure_flex = load_module()
-    with pytest.raises(ValueError, match="days>=<id"):
+    with pytest.raises(ValueError, match=r"days\|mtd\|ytd"):
         configure_flex.parse_window(spec)
 
 
