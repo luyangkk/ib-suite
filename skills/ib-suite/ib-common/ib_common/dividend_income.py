@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, timedelta
+from math import isclose
 from typing import Literal, TypeAlias
 
 from ib_common.schema import (
@@ -22,7 +23,8 @@ from ib_common.schema import (
 
 
 _EventKey: TypeAlias = tuple[str, str, str, date, date]
-_CashEventKey: TypeAlias = tuple[str, str, str, date]
+_CashIdentity: TypeAlias = tuple[str, str, str]
+_MatchRank: TypeAlias = tuple[int, int]
 _MATCH_TOLERANCE_DAYS = 3
 _EXCHANGE_COUNTRIES = {
     "AEB": "NL",
@@ -52,6 +54,21 @@ _EXCHANGE_COUNTRIES = {
     "TSXV": "CA",
     "XETRA": "DE",
 }
+_ISO_COUNTRY_CODES = frozenset(
+    """
+    AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI
+    BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN
+    CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK
+    FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM
+    HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN
+    KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK
+    ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP
+    NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW
+    SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF
+    TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI
+    VN VU WF WS YE YT ZA ZM ZW
+    """.split()
+)
 
 
 def _normalized_symbol(symbol: str) -> str:
@@ -65,7 +82,10 @@ def listing_country(exchange: str, isin: str) -> str:
     if normalized_exchange:
         return _EXCHANGE_COUNTRIES.get(normalized_exchange, "UNKNOWN")
     normalized_isin = isin.strip().upper()
-    if len(normalized_isin) == 12 and normalized_isin[:2].isalpha():
+    if (
+        len(normalized_isin) == 12
+        and normalized_isin[:2] in _ISO_COUNTRY_CODES
+    ):
         return normalized_isin[:2]
     return "UNKNOWN"
 
@@ -137,20 +157,53 @@ def _reduce_accrual_lifecycle(
     return reduced
 
 
-def _best_date_tier(
+def _best_date_indices(
     cash: FlexCashTransaction,
-    candidates: list[FlexDividendAccrual],
-) -> list[FlexDividendAccrual]:
+    candidates: list[tuple[int, FlexDividendAccrual]],
+) -> tuple[list[int], int]:
     """Prefer exact payment dates, then candidates within three calendar days."""
     payment_date = cash.ts.date()
-    exact = [row for row in candidates if row.pay_date == payment_date]
+    exact = [index for index, row in candidates if row.pay_date == payment_date]
     if exact:
-        return exact
-    return [
-        row
-        for row in candidates
+        return exact, 0
+    tolerant = [
+        index
+        for index, row in candidates
         if abs((row.pay_date - payment_date).days) <= _MATCH_TOLERANCE_DAYS
     ]
+    return tolerant, 1
+
+
+def _best_accrual_candidates(
+    cash: FlexCashTransaction,
+    accruals: list[FlexDividendAccrual],
+) -> list[tuple[int, _MatchRank]]:
+    """Return all candidates in the best conid/symbol and date match tier."""
+    common = [
+        (index, row)
+        for index, row in enumerate(accruals)
+        if row.account_id == cash.account_id
+        and row.currency.upper() == cash.currency.upper()
+    ]
+    if cash.conid:
+        conid_indices, date_rank = _best_date_indices(
+            cash,
+            [(index, row) for index, row in common if row.conid == cash.conid],
+        )
+        if conid_indices:
+            return [(index, (0, date_rank)) for index in conid_indices]
+
+    normalized_cash_symbol = _normalized_symbol(cash.symbol)
+    symbol_indices, date_rank = _best_date_indices(
+        cash,
+        [
+            (index, row)
+            for index, row in common
+            if _normalized_symbol(row.symbol) == normalized_cash_symbol
+            and not (cash.conid and row.conid)
+        ],
+    )
+    return [(index, (1, date_rank)) for index in symbol_indices]
 
 
 def _match_accrual(
@@ -158,36 +211,46 @@ def _match_accrual(
     accruals: list[FlexDividendAccrual],
 ) -> tuple[FlexDividendAccrual | None, bool]:
     """Return one best-tier accrual and whether the best tier was ambiguous."""
-    common = [
-        row
-        for row in accruals
-        if row.account_id == cash.account_id
-        and row.currency.upper() == cash.currency.upper()
-    ]
-    if cash.conid:
-        conid_tier = _best_date_tier(
-            cash, [row for row in common if row.conid == cash.conid]
-        )
-        if conid_tier:
-            return (
-                (conid_tier[0], False)
-                if len(conid_tier) == 1
-                else (None, True)
-            )
+    candidates = _best_accrual_candidates(cash, accruals)
+    if len(candidates) == 1:
+        return accruals[candidates[0][0]], False
+    return None, len(candidates) > 1
 
-    normalized_cash_symbol = _normalized_symbol(cash.symbol)
-    symbol_tier = _best_date_tier(
-        cash,
-        [
-            row
-            for row in common
-            if _normalized_symbol(row.symbol) == normalized_cash_symbol
-            and not (cash.conid and row.conid)
-        ],
-    )
-    if len(symbol_tier) == 1:
-        return symbol_tier[0], False
-    return None, len(symbol_tier) > 1
+
+def _associate_cash_to_accruals(
+    cash_rows: list[FlexCashTransaction],
+    accruals: list[FlexDividendAccrual],
+) -> list[tuple[int | None, bool]]:
+    """Assign accruals once, leaving same-rank many-to-one claims ambiguous."""
+    results: list[tuple[int | None, bool]] = [
+        (None, False) for _ in cash_rows
+    ]
+    claims: dict[int, list[tuple[int, _MatchRank]]] = defaultdict(list)
+    for cash_index, cash in enumerate(cash_rows):
+        candidates = _best_accrual_candidates(cash, accruals)
+        if len(candidates) > 1:
+            results[cash_index] = (None, True)
+        elif len(candidates) == 1:
+            accrual_index, rank = candidates[0]
+            claims[accrual_index].append((cash_index, rank))
+
+    for accrual_index, accrual_claims in claims.items():
+        best_rank = min(rank for _, rank in accrual_claims)
+        best_claims = [
+            cash_index
+            for cash_index, rank in accrual_claims
+            if rank == best_rank
+        ]
+        if len(best_claims) == 1:
+            winner = best_claims[0]
+            results[winner] = (accrual_index, False)
+            for cash_index, _ in accrual_claims:
+                if cash_index != winner:
+                    results[cash_index] = (None, True)
+        else:
+            for cash_index, _ in accrual_claims:
+                results[cash_index] = (None, True)
+    return results
 
 
 def _is_dividend_cash(row: FlexCashTransaction) -> bool:
@@ -197,8 +260,8 @@ def _is_dividend_cash(row: FlexCashTransaction) -> bool:
     )
 
 
-def _cash_event_key(row: FlexCashTransaction) -> _CashEventKey:
-    """Return a deterministic cash lifecycle key using conid or symbol identity."""
+def _cash_identity(row: FlexCashTransaction) -> _CashIdentity:
+    """Return stable cash identity without mutable posting dates or trade IDs."""
     identity = (
         f"CONID:{row.conid}"
         if row.conid
@@ -208,40 +271,119 @@ def _cash_event_key(row: FlexCashTransaction) -> _CashEventKey:
         row.account_id,
         identity,
         row.currency.upper(),
-        row.ts.date(),
     )
 
 
-def _reduce_dividend_cash_lifecycle(
+def _is_reversal_code(code: str) -> bool:
+    """Recognize Flex reversal and cancellation lifecycle codes."""
+    return code.strip().upper() in {
+        "CA",
+        "CANCEL",
+        "CANCELLATION",
+        "RE",
+        "REVERSAL",
+    }
+
+
+def _reduce_cash_lifecycle(
     rows: list[FlexCashTransaction],
+    *,
+    transaction_kind: Literal["DIVIDEND", "WITHHOLDING"],
 ) -> list[FlexCashTransaction]:
-    """Net unique signed dividend cash postings and reversals by economic key."""
+    """Apply signed postings and coded reversals to stable cash identities."""
     unique: list[FlexCashTransaction] = []
     seen: set[str] = set()
     for row in rows:
-        if "dividend" not in row.transaction_type.casefold() or row.amount is None:
+        matches_kind = (
+            "dividend" in row.transaction_type.casefold()
+            if transaction_kind == "DIVIDEND"
+            else _is_withholding_cash(row, require_deduction=False)
+        )
+        if not matches_kind or row.amount is None:
             continue
         fingerprint = row.model_dump_json()
         if fingerprint not in seen:
             seen.add(fingerprint)
             unique.append(row)
-    groups: dict[_CashEventKey, list[FlexCashTransaction]] = defaultdict(list)
+    groups: dict[_CashIdentity, list[FlexCashTransaction]] = defaultdict(list)
     for row in unique:
-        groups[_cash_event_key(row)].append(row)
+        groups[_cash_identity(row)].append(row)
+
     reduced: list[FlexCashTransaction] = []
     for event_rows in groups.values():
-        amount = sum(row.amount for row in event_rows if row.amount is not None)
-        if amount > 0:
-            reduced.append(event_rows[-1].model_copy(update={"amount": amount}))
+        active: list[tuple[FlexCashTransaction, float]] = []
+        ordered_rows = sorted(event_rows, key=lambda row: row.ts)
+        for row in ordered_rows:
+            assert row.amount is not None
+            raw_delta = row.amount if transaction_kind == "DIVIDEND" else -row.amount
+            delta = -abs(raw_delta) if _is_reversal_code(row.code) else raw_delta
+            if delta > 0:
+                active.append((row, delta))
+                continue
+            if delta == 0 or not active:
+                continue
+
+            remaining_reversal = abs(delta)
+            exact_index = next(
+                (
+                    index
+                    for index in range(len(active) - 1, -1, -1)
+                    if isclose(
+                        active[index][1],
+                        remaining_reversal,
+                        rel_tol=0.0,
+                        abs_tol=1e-9,
+                    )
+                ),
+                None,
+            )
+            if exact_index is not None:
+                active.pop(exact_index)
+                continue
+            index = len(active) - 1
+            while remaining_reversal > 0 and index >= 0:
+                posting, amount = active[index]
+                consumed = min(amount, remaining_reversal)
+                amount -= consumed
+                remaining_reversal -= consumed
+                if isclose(amount, 0.0, rel_tol=0.0, abs_tol=1e-9):
+                    active.pop(index)
+                else:
+                    active[index] = (posting, amount)
+                index -= 1
+
+        for posting, amount in active:
+            output_amount = amount if transaction_kind == "DIVIDEND" else -amount
+            reduced.append(posting.model_copy(update={"amount": output_amount}))
+    reduced.sort(key=lambda row: (row.ts, row.symbol, row.trade_id or ""))
     return reduced
 
 
-def _is_withholding_cash(row: FlexCashTransaction) -> bool:
+def _reduce_dividend_cash_lifecycle(
+    rows: list[FlexCashTransaction],
+) -> list[FlexCashTransaction]:
+    """Reduce dividend cash postings and reversals to surviving payments."""
+    return _reduce_cash_lifecycle(rows, transaction_kind="DIVIDEND")
+
+
+def _is_withholding_cash(
+    row: FlexCashTransaction,
+    *,
+    require_deduction: bool = True,
+) -> bool:
     """Identify a posted cash-tax deduction that can reconcile withholding."""
     transaction_type = row.transaction_type.casefold()
-    return ("withholding" in transaction_type or "tax" in transaction_type) and bool(
-        row.amount is not None and row.amount < 0
-    )
+    is_tax = "withholding" in transaction_type or "tax" in transaction_type
+    if not require_deduction:
+        return is_tax and row.amount is not None
+    return is_tax and bool(row.amount is not None and row.amount < 0)
+
+
+def _reduce_withholding_cash_lifecycle(
+    rows: list[FlexCashTransaction],
+) -> list[FlexCashTransaction]:
+    """Reduce withholding postings and reversals to surviving deductions."""
+    return _reduce_cash_lifecycle(rows, transaction_kind="WITHHOLDING")
 
 
 def _best_cash_date_tier(
@@ -260,14 +402,14 @@ def _best_cash_date_tier(
     ]
 
 
-def _associated_withholding(
+def _withholding_association(
     dividend: FlexCashTransaction,
     cash_rows: list[FlexCashTransaction],
-) -> float | None:
-    """Return one uniquely associated cash-tax deduction, never an arbitrary sum."""
+) -> tuple[float | None, bool]:
+    """Return a unique cash-tax deduction and an explicit ambiguity flag."""
     common = [
         row
-        for row in cash_rows
+        for row in _reduce_withholding_cash_lifecycle(cash_rows)
         if _is_withholding_cash(row)
         and row.account_id == dividend.account_id
         and row.currency.upper() == dividend.currency.upper()
@@ -278,9 +420,9 @@ def _associated_withholding(
         )
         if conid_tier:
             return (
-                abs(conid_tier[0].amount)
+                (abs(conid_tier[0].amount), False)
                 if len(conid_tier) == 1 and conid_tier[0].amount is not None
-                else None
+                else (None, True)
             )
     normalized_symbol = _normalized_symbol(dividend.symbol)
     symbol_tier = _best_cash_date_tier(
@@ -292,11 +434,18 @@ def _associated_withholding(
             and not (dividend.conid and row.conid)
         ],
     )
-    return (
-        abs(symbol_tier[0].amount)
-        if len(symbol_tier) == 1 and symbol_tier[0].amount is not None
-        else None
-    )
+    if len(symbol_tier) == 1 and symbol_tier[0].amount is not None:
+        return abs(symbol_tier[0].amount), False
+    return None, len(symbol_tier) > 1
+
+
+def _associated_withholding(
+    dividend: FlexCashTransaction,
+    cash_rows: list[FlexCashTransaction],
+) -> float | None:
+    """Return one reliable cash-tax deduction or null."""
+    withholding, _ = _withholding_association(dividend, cash_rows)
+    return withholding
 
 
 def _instrument_for(
@@ -386,6 +535,7 @@ def _realized_line(
     *,
     country: str,
     cash_withholding: float | None,
+    withholding_ambiguous: bool,
 ) -> DividendIncomeLine:
     """Convert confirmed dividend cash and optional accrual facts to one line."""
     if accrual is not None:
@@ -418,6 +568,15 @@ def _realized_line(
                 "base_net": _converted(line.net, rate),
             }
         )
+    unmatched_net = (
+        None
+        if withholding_ambiguous
+        else (
+            cash.amount - cash_withholding
+            if cash.amount is not None and cash_withholding is not None
+            else cash.amount
+        )
+    )
     return DividendIncomeLine(
         symbol=cash.symbol.strip(),
         payment_date=cash.ts.date(),
@@ -425,13 +584,13 @@ def _realized_line(
         gross=None,
         withholding_tax=cash_withholding,
         fee=None,
-        net=cash.amount,
+        net=unmatched_net,
         currency=cash.currency.upper(),
         fx_rate_to_base=cash.fx_rate_to_base,
         base_gross=None,
         base_withholding_tax=_converted(cash_withholding, cash.fx_rate_to_base),
         base_fee=None,
-        base_net=_converted(cash.amount, cash.fx_rate_to_base),
+        base_net=_converted(unmatched_net, cash.fx_rate_to_base),
         quantity=None,
         country=country,
     )
@@ -464,11 +623,29 @@ def _holding_accruals(
     ]
     if position.conid:
         exact = [row for row in common if row.conid == position.conid]
+        exact_secondary_keys = {
+            (
+                row.account_id,
+                row.currency.upper(),
+                _normalized_symbol(row.symbol),
+                row.ex_date,
+                row.pay_date,
+            )
+            for row in exact
+        }
         fallback = [
             row
             for row in common
             if row.conid is None
             and _normalized_symbol(row.symbol) == _normalized_symbol(position.symbol)
+            and (
+                row.account_id,
+                row.currency.upper(),
+                _normalized_symbol(row.symbol),
+                row.ex_date,
+                row.pay_date,
+            )
+            not in exact_secondary_keys
         ]
         return exact + fallback
     return [
@@ -524,7 +701,8 @@ def _effective_tax_rate(
 
     if gross_total <= 0:
         return None
-    return min(1.0, max(0.0, tax_total / gross_total))
+    effective_rate = tax_total / gross_total
+    return effective_rate if 0.0 <= effective_rate <= 1.0 else None
 
 
 def _current_eligible_positions(
@@ -789,24 +967,25 @@ def build_dividend_income_report(
     effective_history_start = history_start_date or start_date
     accruals = _reduce_accrual_lifecycle(dataset.dividend_accruals)
     dividend_cash = _reduce_dividend_cash_lifecycle(dataset.cash_transactions)
+    realized_associations = _associate_cash_to_accruals(dividend_cash, accruals)
     realized: list[DividendIncomeLine] = []
     limitations: list[str] = []
 
-    in_range_cash = [
-        row for row in dividend_cash if start_date <= row.ts.date() <= end_date
-    ]
-    for cash in in_range_cash:
-        accrual, ambiguous = _match_accrual(cash, accruals)
+    for cash_index, cash in enumerate(dividend_cash):
+        if not start_date <= cash.ts.date() <= end_date:
+            continue
+        accrual_index, ambiguous = realized_associations[cash_index]
+        accrual = None if accrual_index is None else accruals[accrual_index]
         country = _country_for(
             conid=cash.conid,
             symbol=cash.symbol,
             currency=cash.currency,
             instruments=dataset.instruments,
         )
-        cash_withholding = (
-            _associated_withholding(cash, dataset.cash_transactions)
+        cash_withholding, withholding_ambiguous = (
+            _withholding_association(cash, dataset.cash_transactions)
             if accrual is None or accrual.tax is None
-            else None
+            else (None, False)
         )
         realized.append(
             _realized_line(
@@ -814,8 +993,14 @@ def build_dividend_income_report(
                 accrual,
                 country=country,
                 cash_withholding=cash_withholding,
+                withholding_ambiguous=withholding_ambiguous,
             )
         )
+        if withholding_ambiguous:
+            limitations.append(
+                f"Realized dividend for {cash.symbol.strip()} had ambiguous "
+                "withholding cash; tax and unmatched net were not inferred."
+            )
         if ambiguous:
             limitations.append(
                 f"Realized dividend for {cash.symbol.strip()} had an ambiguous "
@@ -828,14 +1013,17 @@ def build_dividend_income_report(
             )
 
     open_accruals = _reduce_accrual_lifecycle(dataset.open_dividend_accruals)
+    open_associations = _associate_cash_to_accruals(dividend_cash, open_accruals)
+    paid_open_indices = {
+        accrual_index
+        for accrual_index, _ in open_associations
+        if accrual_index is not None
+    }
     expected: list[DividendIncomeLine] = []
-    for accrual in open_accruals:
+    for open_index, accrual in enumerate(open_accruals):
         if not start_date <= accrual.pay_date <= end_date:
             continue
-        already_paid = any(
-            _match_accrual(cash, [accrual])[0] is not None for cash in dividend_cash
-        )
-        if not already_paid:
+        if open_index not in paid_open_indices:
             country = _country_for(
                 conid=accrual.conid,
                 symbol=accrual.symbol,
