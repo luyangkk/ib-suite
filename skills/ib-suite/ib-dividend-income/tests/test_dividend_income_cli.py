@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import date
@@ -41,6 +42,7 @@ def _write_config(
     if token is not None:
         flex["token"] = token
     config = tmp_path / "config.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(json.dumps({"flex": flex}), encoding="utf-8")
     return config
 
@@ -74,6 +76,7 @@ def test_orchestration_fetches_once_with_smallest_estimate_window(
     assert result["start_date"] == "2026-05-01"
     assert result["end_date"] == "2026-07-31"
     assert result["annual_estimate"]["history_days_covered"] == 365
+    assert result["run_id"] == "test-run"
 
 
 def test_setup_missing_token_returns_stable_guide(tmp_path: Path) -> None:
@@ -90,12 +93,14 @@ def test_setup_missing_token_returns_stable_guide(tmp_path: Path) -> None:
     result = dividend_income(
         str(config), "2026-07-01", "2026-07-31", fetcher=fetcher,
         today=date(2026, 7, 31),
+        run_id="missing-token-run",
     )
 
     assert result == {
         "status": "setup_required",
         "missing": ["flex.token"],
         "guide": "flex-query-setup.md",
+        "run_id": "missing-token-run",
     }
     assert called is False
 
@@ -108,12 +113,14 @@ def test_setup_empty_query_map_returns_stable_guide(tmp_path: Path) -> None:
         str(config), "2026-07-01", "2026-07-31",
         fetcher=lambda _token, _query: pytest.fail("fetcher must not be called"),
         today=date(2026, 7, 31),
+        run_id="empty-map-run",
     )
 
     assert result == {
         "status": "setup_required",
         "missing": ["flex.query_ids"],
         "guide": "flex-query-setup.md",
+        "run_id": "empty-map-run",
     }
 
 
@@ -125,12 +132,14 @@ def test_coverage_insufficient_window_returns_required_state(tmp_path: Path) -> 
         str(config), "2026-07-01", "2026-07-31",
         fetcher=lambda _token, _query: pytest.fail("fetcher must not be called"),
         today=date(2026, 7, 31),
+        run_id="coverage-run",
     )
 
     assert result == {
         "status": "coverage_required",
         "missing": ["flex.query_ids.365"],
         "guide": "flex-query-setup.md",
+        "run_id": "coverage-run",
     }
 
 
@@ -147,10 +156,12 @@ def test_query_update_missing_section_returns_schema_names(
         str(config), "2026-07-01", "2026-07-31",
         fetcher=lambda _token, _query: xml,
         today=date(2026, 7, 31),
+        run_id="schema-run",
     )
 
     assert result["status"] == "query_update_required"
     assert result["guide"] == "flex-query-setup.md"
+    assert result["run_id"] == "schema-run"
     assert result["missing"] == [
         "CashTransactions",
         "ChangeInDividendAccruals",
@@ -159,6 +170,27 @@ def test_query_update_missing_section_returns_schema_names(
         "FinancialInstrumentInformation",
     ]
     assert "U1234567" not in json.dumps(result)
+
+
+def test_setup_blank_numeric_query_id_does_not_fetch(tmp_path: Path) -> None:
+    """A blank numeric Query ID is unconfigured and never reaches the fetcher."""
+    config = _write_config(tmp_path, query_ids={"365": "   "})
+
+    result = dividend_income(
+        str(config),
+        "2026-07-01",
+        "2026-07-31",
+        fetcher=lambda _token, _query: pytest.fail("fetcher must not be called"),
+        today=date(2026, 7, 31),
+        run_id="blank-query-run",
+    )
+
+    assert result == {
+        "status": "setup_required",
+        "missing": ["flex.query_ids"],
+        "guide": "flex-query-setup.md",
+        "run_id": "blank-query-run",
+    }
 
 
 def _run_cli(
@@ -266,6 +298,76 @@ def test_cli_flex_error_is_nonzero_json_and_sanitized(tmp_path: Path) -> None:
     for secret in (token, query_id, reference, account, "https://", "?t=", "&q="):
         assert secret not in completed.stdout
         assert secret not in completed.stderr
+
+
+def test_cli_malformed_query_map_is_structured_and_never_leaks(
+    tmp_path: Path,
+) -> None:
+    """Malformed query windows return safe setup metadata without raw input."""
+    token = "TOKEN-SHOULD-NOT-LEAK"
+    sentinel = "MALFORMED-QUERY-SENTINEL"
+    config = _write_config(tmp_path, token=token, query_ids={"bad": sentinel})
+    fixture = Path(__file__).parent / "fixtures" / "flex_dividend_income_sample.xml"
+
+    completed = _run_cli(config, fixture)
+
+    payload = json.loads(completed.stdout)
+    assert completed.returncode != 0
+    assert payload["status"] == "setup_required"
+    assert payload["missing"] == ["flex.query_ids"]
+    assert payload["guide"] == "flex-query-setup.md"
+    assert payload["message"] == "Flex configuration is invalid"
+    assert re.fullmatch(r"[0-9a-f]{32}", payload["run_id"])
+    assert f"run_id={payload['run_id']}" in completed.stderr
+    for secret in (token, sentinel):
+        assert secret not in completed.stdout
+        assert secret not in completed.stderr
+
+
+def test_cli_every_payload_correlates_stdout_and_stderr_run_id(
+    tmp_path: Path,
+) -> None:
+    """Success and each representative failure share one generated run ID."""
+    fixture = Path(__file__).parent / "fixtures" / "flex_dividend_income_sample.xml"
+    missing_section = tmp_path / "missing-section.xml"
+    missing_section.write_text(
+        "<FlexQueryResponse><FlexStatements><FlexStatement>"
+        '<AccountInformation accountId="U1234567" currency="USD"/>'
+        "</FlexStatement></FlexStatements></FlexQueryResponse>",
+        encoding="utf-8",
+    )
+    invalid_xml = tmp_path / "invalid.xml"
+    invalid_xml.write_text("not XML", encoding="utf-8")
+    success_config = _write_config(tmp_path / "success", query_ids={"365": "Q1"})
+    setup_config = _write_config(tmp_path / "setup", token=None)
+    coverage_config = _write_config(tmp_path / "coverage", query_ids={"30": "Q30"})
+    schema_config = _write_config(tmp_path / "schema", query_ids={"365": "Q365"})
+    processing_config = _write_config(
+        tmp_path / "processing", query_ids={"365": "Q365"}
+    )
+    service_config = _write_config(
+        tmp_path / "service", query_ids={"365": "Q365"}
+    )
+    cases = [
+        ("success", _run_cli(success_config, fixture)),
+        ("setup_required", _run_cli(setup_config, fixture)),
+        ("coverage_required", _run_cli(coverage_config, fixture)),
+        ("query_update_required", _run_cli(schema_config, missing_section)),
+        ("error", _run_cli(processing_config, invalid_xml)),
+        (
+            "error",
+            _run_cli(service_config, fixture, error_message="safe service failure"),
+        ),
+    ]
+
+    for expected_status, completed in cases:
+        payload = json.loads(completed.stdout)
+        assert payload.get("status", "success") == expected_status
+        assert re.fullmatch(r"[0-9a-f]{32}", payload["run_id"])
+        assert completed.stderr.count(f"run_id={payload['run_id']}") >= 1
+        logged_ids = set(re.findall(r"run_id=([0-9a-f]{32})", completed.stderr))
+        assert logged_ids == {payload["run_id"]}
+        assert completed.stdout.count("\n") == 1
 
 
 def test_cli_module_does_not_import_gateway_client() -> None:

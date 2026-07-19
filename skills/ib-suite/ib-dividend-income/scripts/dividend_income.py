@@ -12,6 +12,8 @@ from collections.abc import Callable
 from datetime import date, timedelta
 from pathlib import Path
 
+from pydantic import ValidationError
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "ib-gateway" / "scripts"))
 
@@ -29,9 +31,38 @@ LOGGER = logging.getLogger("ib_dividend_income")
 GUIDE = "flex-query-setup.md"
 
 
-def _state(status: str, missing: list[str]) -> dict[str, object]:
+def _state(
+    status: str,
+    missing: list[str],
+    run_id: str,
+    *,
+    message: str | None = None,
+) -> dict[str, object]:
     """Build a stable JSON-safe setup state containing only schema names."""
-    return {"status": status, "missing": missing, "guide": GUIDE}
+    payload: dict[str, object] = {
+        "status": status,
+        "missing": missing,
+        "guide": GUIDE,
+        "run_id": run_id,
+    }
+    if message is not None:
+        payload["message"] = message
+    return payload
+
+
+def _validation_missing(exc: ValidationError) -> list[str]:
+    """Map validation locations to stable names without inspecting raw inputs."""
+    locations = [
+        tuple(error.get("loc", ()))
+        for error in exc.errors(
+            include_url=False,
+            include_context=False,
+            include_input=False,
+        )
+    ]
+    if any(location[:2] == ("flex", "query_ids") for location in locations):
+        return ["flex.query_ids"]
+    return ["config"]
 
 
 def _sanitize(message: str, sensitive_values: tuple[str, ...] = ()) -> str:
@@ -87,10 +118,32 @@ def dividend_income(
     resolved_run_id = run_id or uuid.uuid4().hex
     _log(logging.INFO, "run_started", run_id=resolved_run_id)
 
-    cfg = load_config(config_path)
+    try:
+        cfg = load_config(config_path)
+    except ValidationError as exc:
+        missing = _validation_missing(exc)
+        _log(
+            logging.INFO,
+            "setup_required",
+            run_id=resolved_run_id,
+            fields={"missing_count": len(missing)},
+        )
+        return _state(
+            "setup_required",
+            missing,
+            resolved_run_id,
+            message="Flex configuration is invalid",
+        )
     if not cfg.flex.token:
         _log(logging.INFO, "setup_required", run_id=resolved_run_id)
-        return _state("setup_required", ["flex.token"])
+        return _state("setup_required", ["flex.token"], resolved_run_id)
+
+    if any(
+        key.isdigit() and not query_id.strip()
+        for key, query_id in cfg.flex.query_ids.items()
+    ):
+        _log(logging.INFO, "setup_required", run_id=resolved_run_id)
+        return _state("setup_required", ["flex.query_ids"], resolved_run_id)
 
     numeric_windows = {
         key: query_id
@@ -99,7 +152,7 @@ def dividend_income(
     }
     if not numeric_windows:
         _log(logging.INFO, "setup_required", run_id=resolved_run_id)
-        return _state("setup_required", ["flex.query_ids"])
+        return _state("setup_required", ["flex.query_ids"], resolved_run_id)
 
     start_date = parse_iso_date(start)
     end_date = parse_iso_date(end)
@@ -122,7 +175,11 @@ def dividend_income(
             run_id=resolved_run_id,
             fields={"required_days": required_days},
         )
-        return _state("coverage_required", [f"flex.query_ids.{required_days}"])
+        return _state(
+            "coverage_required",
+            [f"flex.query_ids.{required_days}"],
+            resolved_run_id,
+        )
 
     _log(
         logging.INFO,
@@ -141,7 +198,7 @@ def dividend_income(
             run_id=resolved_run_id,
             fields={"missing_count": len(missing)},
         )
-        return _state("query_update_required", missing)
+        return _state("query_update_required", missing, resolved_run_id)
     except FlexServiceError as exc:
         safe_error = _sanitize(str(exc), (cfg.flex.token, query_id))
         _log(
@@ -153,6 +210,7 @@ def dividend_income(
         return {
             "status": "error",
             "message": "Flex report retrieval failed; verify setup and service status",
+            "run_id": resolved_run_id,
         }
     except (RuntimeError, ValueError) as exc:
         safe_error = _sanitize(str(exc), (cfg.flex.token, query_id))
@@ -165,6 +223,7 @@ def dividend_income(
         return {
             "status": "error",
             "message": "Flex report processing failed; verify query setup",
+            "run_id": resolved_run_id,
         }
 
     _log(
@@ -186,6 +245,7 @@ def dividend_income(
         end_date,
         history_start_date=theoretical_start,
     ).model_dump(mode="json")
+    report["run_id"] = resolved_run_id
     elapsed_ms = round((time.monotonic() - started) * 1000)
     _log(
         logging.INFO,
@@ -228,19 +288,26 @@ def main(
     )
     args = parser.parse_args()
     _configure_logging(args.log_level)
+    run_id = uuid.uuid4().hex
     try:
         payload = dividend_income(
             args.config,
             args.start_date,
             args.end_date,
             fetcher=fetcher,
+            run_id=run_id,
         )
-    except (FileNotFoundError, OSError, ValueError) as exc:
-        safe_error = _sanitize(str(exc))
-        LOGGER.error("event=cli_error error=%s", safe_error)
+    except (FileNotFoundError, OSError, ValueError):
+        _log(
+            logging.ERROR,
+            "cli_error",
+            run_id=run_id,
+            fields={"error": "invalid_local_input"},
+        )
         payload = {
             "status": "error",
             "message": "Invalid local configuration or date range",
+            "run_id": run_id,
         }
     print(json.dumps(payload, allow_nan=False))
     return 2 if "status" in payload else 0
