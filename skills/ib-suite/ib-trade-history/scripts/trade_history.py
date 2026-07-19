@@ -67,6 +67,30 @@ def select_flex_window(
     return largest, numeric[largest], note
 
 
+def resolve_period_bounds(period: str, today: date) -> tuple[date, date]:
+    """Return inclusive (start, end) bounds for a month- or year-to-date period."""
+    if period == "mtd":
+        return today.replace(day=1), today
+    if period == "ytd":
+        return date(today.year, 1, 1), today
+    raise ValueError(f"unknown period {period!r}; use 'mtd' or 'ytd'")
+
+
+def select_period_window(
+    query_ids: dict[str, str], period: str, today: date
+) -> tuple[str, str | None]:
+    """Return (query_id, note) for a period, falling back to the numeric pool.
+
+    A registered period key wins with no note. Otherwise the period's start date
+    drives numeric auto-selection, carrying its coverage note through.
+    """
+    if period in query_ids:
+        return query_ids[period], None
+    start_date, _ = resolve_period_bounds(period, today)
+    _, query_id, note = select_flex_window(query_ids, start_date, today)
+    return query_id, note
+
+
 def resolve_flex_token(cfg: Config) -> str:
     """Return the Flex token from local configuration or raise actionably."""
     if cfg.flex.token:

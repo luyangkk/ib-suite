@@ -487,3 +487,36 @@ def test_select_flex_window_rejects_empty_map():
     """No configured windows is an actionable configuration error."""
     with pytest.raises(ValueError, match="--window"):
         trade_history.select_flex_window({}, date(2026, 7, 12), date(2026, 7, 18))
+
+
+def test_resolve_period_bounds_mtd_starts_at_month_first():
+    """Month-to-date spans the first of the month through today, inclusive."""
+    assert trade_history.resolve_period_bounds("mtd", date(2026, 7, 19)) == (
+        date(2026, 7, 1),
+        date(2026, 7, 19),
+    )
+
+
+def test_resolve_period_bounds_ytd_starts_at_year_first():
+    """Year-to-date spans January 1 through today, inclusive."""
+    assert trade_history.resolve_period_bounds("ytd", date(2026, 7, 19)) == (
+        date(2026, 1, 1),
+        date(2026, 7, 19),
+    )
+
+
+def test_select_period_window_uses_registered_query_id():
+    """A registered period key is used directly with no coverage note."""
+    query_id, note = trade_history.select_period_window(
+        {"7": "q7", "ytd": "qy"}, "ytd", date(2026, 7, 19)
+    )
+    assert (query_id, note) == ("qy", None)
+
+
+def test_select_period_window_falls_back_to_numeric_pool_with_note():
+    """An unregistered period falls back to the numeric pool and flags the gap."""
+    query_id, note = trade_history.select_period_window(
+        {"7": "q7"}, "ytd", date(2026, 7, 19)
+    )
+    assert query_id == "q7"
+    assert note is not None and "30" not in note  # note is from select_flex_window
