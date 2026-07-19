@@ -336,6 +336,21 @@ def _section_date(
         ) from None
 
 
+def _optional_section_date(
+    element: ET.Element, section_name: str, field_name: str
+) -> date | None:
+    """Parse a selected nullable Flex date, normalizing a blank value to None."""
+    value = _present_section_value(element, section_name, field_name)
+    if not value:
+        return None
+    try:
+        return _parse_date(value)
+    except ValueError:
+        raise ValueError(
+            f"Flex {section_name} field {field_name} is invalid"
+        ) from None
+
+
 def _section_datetime(
     element: ET.Element, section_name: str, field_name: str
 ) -> datetime:
@@ -415,7 +430,9 @@ def _parse_dividend_accrual(
         ),
         conid=_optional_section_text(element, section, "conid"),
         accrual_date=(
-            _section_date(element, section, "date") if is_change else None
+            _optional_section_date(element, section, "date")
+            if is_change
+            else None
         ),
         ex_date=_section_date(element, section, "exDate"),
         pay_date=_section_date(element, section, "payDate"),
@@ -427,7 +444,9 @@ def _parse_dividend_accrual(
         net_amount=_optional_section_float(element, section, "netAmount"),
         code=_present_section_value(element, section, "code").upper(),
         report_date=(
-            _section_date(element, section, "reportDate") if is_change else None
+            _optional_section_date(element, section, "reportDate")
+            if is_change
+            else None
         ),
     )
 

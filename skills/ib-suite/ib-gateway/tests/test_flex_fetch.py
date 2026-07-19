@@ -41,6 +41,17 @@ def _without_attribute(
     return ET.tostring(root, encoding="unicode")
 
 
+def _with_blank_attribute(
+    xml_text: str, element_name: str, attribute_name: str
+) -> str:
+    """Return fixture XML with one selected query attribute blanked."""
+    root = ET.fromstring(xml_text)
+    element = root.find(f".//{element_name}")
+    assert element is not None
+    element.set(attribute_name, "")
+    return ET.tostring(root, encoding="unicode")
+
+
 def test_parse_flex_dividend_dataset_keeps_normalized_raw_records() -> None:
     """The six dividend sections become typed records without sign changes."""
     xml_text = DIVIDEND_FIX.read_text(encoding="utf-8")
@@ -64,6 +75,24 @@ def test_parse_flex_dividend_dataset_keeps_normalized_raw_records() -> None:
     assert dataset.open_positions[2].side == "SHORT"
     assert dataset.instruments[0].listing_exchange == "NASDAQ"
     assert dataset.instruments[3].listing_exchange is None
+
+
+@pytest.mark.parametrize(
+    ("attribute_name", "model_field"),
+    [("date", "accrual_date"), ("reportDate", "report_date")],
+)
+def test_blank_optional_dividend_accrual_dates_become_none(
+    attribute_name: str, model_field: str
+) -> None:
+    """Selected blank nullable accrual dates remain present facts with no value."""
+    xml_text = DIVIDEND_FIX.read_text(encoding="utf-8")
+    xml_text = _with_blank_attribute(
+        xml_text, "ChangeInDividendAccrual", attribute_name
+    )
+
+    dataset = flex.parse_flex_dividend_dataset(xml_text)
+
+    assert getattr(dataset.dividend_accruals[0], model_field) is None
 
 
 @pytest.mark.parametrize(
