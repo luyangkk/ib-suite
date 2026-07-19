@@ -75,7 +75,14 @@ def test_orchestration_fetches_once_with_smallest_estimate_window(
     assert json.loads(json.dumps(result)) == result
     assert result["start_date"] == "2026-05-01"
     assert result["end_date"] == "2026-07-31"
-    assert result["annual_estimate"]["history_days_covered"] == 365
+    assert result["realized_dividends"][0]["gross"] == 25.0
+    assert result["realized_dividends"][0]["quantity"] == 100.0
+    assert result["summary"]["realized"]["gross"] == 25.0
+    assert result["annual_estimate"]["estimated_base_gross"] == 25.0
+    assert result["annual_estimate"]["history_days_covered"] == 212
+    assert result["annual_estimate"]["complete_history"] is False
+    assert "2026-01-01" in result["coverage_note"]
+    assert "2026-07-31" in result["coverage_note"]
     assert result["run_id"] == "test-run"
 
 
@@ -105,8 +112,8 @@ def test_orchestration_future_end_uses_today_for_annual_history(
 
     assert calls == [("TOKEN-SHOULD-NOT-LEAK", "QUERY-365")]
     assert [line["symbol"] for line in result["expected_dividends"]] == ["SGFUND"]
-    assert result["annual_estimate"]["history_days_covered"] == 365
-    assert result["annual_estimate"]["complete_history"] is True
+    assert result["annual_estimate"]["history_days_covered"] == 212
+    assert result["annual_estimate"]["complete_history"] is False
 
 
 def test_setup_missing_token_returns_stable_guide(tmp_path: Path) -> None:
@@ -229,21 +236,29 @@ def _run_cli(
     *,
     log_level: str = "INFO",
     error_message: str | None = None,
+    failure_kind: str = "",
 ) -> subprocess.CompletedProcess[str]:
     """Run the CLI boundary in a child interpreter with an injected fetcher."""
     launcher = """
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
+import requests
 sys.path.insert(0, sys.argv.pop(1))
 import dividend_income as cli
 fixture = Path(sys.argv.pop(1))
 error_message = sys.argv.pop(1)
+failure_kind = sys.argv.pop(1)
 class FixedDate(cli.date):
     @classmethod
     def today(cls) -> "FixedDate":
         return cls(2026, 7, 31)
 cli.date = FixedDate
 def fetcher(token: str, query_id: str) -> str:
+    if failure_kind == "request":
+        raise requests.RequestException(error_message)
+    if failure_kind == "parse":
+        raise ET.ParseError(error_message)
     if error_message:
         raise cli.FlexServiceError("1012", error_message)
     return fixture.read_text(encoding="utf-8")
@@ -256,6 +271,7 @@ raise SystemExit(cli.main(fetcher=fetcher))
         str(SCRIPTS_DIR),
         str(fixture),
         error_message or "",
+        failure_kind,
         "--config",
         str(config),
         "--start-date",
@@ -297,6 +313,11 @@ def test_cli_stdout_is_one_json_object_and_logs_are_safe(
     assert "run_id=" in completed.stderr
     assert "window=365" in completed.stderr
     assert "cash_transactions=2" in completed.stderr
+    assert "event=association_completed" in completed.stderr
+    assert "matched_count=1" in completed.stderr
+    assert "unmatched_count=0" in completed.stderr
+    assert "event=calculation_completed" in completed.stderr
+    assert "history_days_covered=212" in completed.stderr
     assert "elapsed_ms=" in completed.stderr
     forbidden = [token, query_id, "U0000000", "<FlexQueryResponse", "265598"]
     for secret in forbidden:
@@ -309,11 +330,11 @@ def test_cli_flex_error_is_nonzero_json_and_sanitized(tmp_path: Path) -> None:
     token = "TOKEN-SHOULD-NOT-LEAK"
     query_id = "QUERY-SHOULD-NOT-LEAK"
     reference = "REFERENCE-SHOULD-NOT-LEAK"
-    account = "U1234567"
+    account = "MASTER-ABC-999"
     config = _write_config(tmp_path, token=token, query_ids={"365": query_id})
     fixture = Path(__file__).parent / "fixtures" / "flex_dividend_income_sample.xml"
     message = (
-        f"account {account} Reference Code {reference} "
+        f"accountId={account} Reference Code {reference} "
         f"https://example.invalid/report?t={token}&q={query_id}"
     )
 
@@ -326,6 +347,41 @@ def test_cli_flex_error_is_nonzero_json_and_sanitized(tmp_path: Path) -> None:
     assert payload["status"] == "error"
     assert completed.stdout.count("\n") == 1
     for secret in (token, query_id, reference, account, "https://", "?t=", "&q="):
+        assert secret not in completed.stdout
+        assert secret not in completed.stderr
+
+
+@pytest.mark.parametrize("failure_kind", ["request", "parse"])
+def test_cli_retrieval_boundary_failures_are_one_safe_json_object(
+    tmp_path: Path,
+    failure_kind: str,
+) -> None:
+    """Network and malformed-response failures use the retrieval error contract."""
+    token = "TOKEN-SHOULD-NOT-LEAK"
+    query_id = "QUERY-SHOULD-NOT-LEAK"
+    account = "INSTITUTIONAL-ACCOUNT-77"
+    config = _write_config(tmp_path, token=token, query_ids={"365": query_id})
+    fixture = Path(__file__).parent / "fixtures" / "flex_dividend_income_sample.xml"
+    error_message = (
+        f"account={account} https://example.invalid/report?t={token}&q={query_id}"
+    )
+
+    completed = _run_cli(
+        config,
+        fixture,
+        error_message=error_message,
+        failure_kind=failure_kind,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert completed.returncode != 0
+    assert completed.stdout.count("\n") == 1
+    assert payload["status"] == "error"
+    assert payload["message"] == (
+        "Flex report retrieval failed; verify setup and service status"
+    )
+    assert "invalid_local_input" not in completed.stderr
+    for secret in (token, query_id, account, "https://", "?t=", "&q="):
         assert secret not in completed.stdout
         assert secret not in completed.stderr
 

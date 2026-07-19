@@ -9,6 +9,7 @@ from typing import Literal, TypeAlias
 from ib_common.schema import (
     AnnualDividendEstimate,
     AnnualDividendHolding,
+    DividendAttribution,
     DividendContribution,
     DividendIncomeLine,
     DividendIncomeReport,
@@ -118,8 +119,10 @@ def _sum_optional(
 
 def _reduce_accrual_lifecycle(
     rows: list[FlexDividendAccrual],
+    *,
+    confirmed_cash: list[FlexCashTransaction] | None = None,
 ) -> list[FlexDividendAccrual]:
-    """Collapse posting, correction, cancellation, and reversal rows by event."""
+    """Collapse accrual rows, retaining payout reversals proven by cash."""
     unique_rows: list[FlexDividendAccrual] = []
     seen: set[str] = set()
     for row in rows:
@@ -132,8 +135,52 @@ def _reduce_accrual_lifecycle(
     for row in unique_rows:
         groups[_event_key(row)].append(row)
 
+    confirmed_by_key: dict[_EventKey, list[FlexCashTransaction]] = defaultdict(list)
+    if confirmed_cash:
+        group_items = list(groups.items())
+        for cash in confirmed_cash:
+            common = [
+                (key, event_rows)
+                for key, event_rows in group_items
+                if key[0] == cash.account_id
+                and key[2] == cash.currency.upper()
+            ]
+            if cash.conid:
+                identity_matches = [
+                    (key, event_rows)
+                    for key, event_rows in common
+                    if key[1] == f"CONID:{cash.conid}"
+                ]
+                if not identity_matches:
+                    identity_matches = [
+                        (key, event_rows)
+                        for key, event_rows in common
+                        if key[1].startswith("SYMBOL:")
+                        and _normalized_symbol(event_rows[-1].symbol)
+                        == _normalized_symbol(cash.symbol)
+                    ]
+            else:
+                identity_matches = [
+                    (key, event_rows)
+                    for key, event_rows in common
+                    if _normalized_symbol(event_rows[-1].symbol)
+                    == _normalized_symbol(cash.symbol)
+                ]
+            exact = [
+                (key, event_rows)
+                for key, event_rows in identity_matches
+                if key[4] == cash.ts.date()
+            ]
+            candidates = exact or [
+                (key, event_rows)
+                for key, event_rows in identity_matches
+                if abs((key[4] - cash.ts.date()).days) <= _MATCH_TOLERANCE_DAYS
+            ]
+            if len(candidates) == 1:
+                confirmed_by_key[candidates[0][0]].append(cash)
+
     reduced: list[FlexDividendAccrual] = []
-    for event_rows in groups.values():
+    for event_key, event_rows in groups.items():
         representative = event_rows[-1]
         combined = representative.model_copy(
             update={
@@ -155,6 +202,47 @@ def _reduce_accrual_lifecycle(
         )
         if positive_event:
             reduced.append(combined)
+            continue
+
+        event_cash = confirmed_by_key.get(event_key, [])
+        positive_postings = [
+            row
+            for row in event_rows
+            if any(
+                value is not None and value > 0
+                for value in (row.gross_amount, row.net_amount, row.gross_rate)
+            )
+        ]
+        if not event_cash or not positive_postings:
+            continue
+
+        cash_amounts = [
+            cash.amount for cash in event_cash if cash.amount is not None
+        ]
+        amount_matches = [
+            row
+            for row in positive_postings
+            if row.gross_amount is not None
+            and any(
+                isclose(
+                    row.gross_amount,
+                    cash_amount,
+                    rel_tol=0.0,
+                    abs_tol=1e-9,
+                )
+                for cash_amount in cash_amounts
+            )
+        ]
+        candidates = amount_matches or positive_postings
+        retained = max(
+            enumerate(candidates),
+            key=lambda item: (
+                item[1].accrual_date or date.min,
+                item[1].report_date or date.min,
+                item[0],
+            ),
+        )[1]
+        reduced.append(retained)
     return reduced
 
 
@@ -532,13 +620,19 @@ def _instrument_for(
     currency: str,
     instruments: list[FlexInstrument],
 ) -> FlexInstrument | None:
-    """Resolve unique instrument metadata by conid, then normalized symbol."""
+    """Resolve instrument metadata when every best-tier row agrees on country."""
+    def agreeing(rows: list[FlexInstrument]) -> FlexInstrument | None:
+        """Return a representative only when country-relevant facts agree."""
+        countries = {
+            listing_country(row.listing_exchange or "", row.isin or "")
+            for row in rows
+        }
+        return rows[0] if rows and len(countries) == 1 else None
+
     if conid:
         conid_matches = [row for row in instruments if row.conid == conid]
-        if len(conid_matches) == 1:
-            return conid_matches[0]
-        if len(conid_matches) > 1:
-            return None
+        if conid_matches:
+            return agreeing(conid_matches)
     symbol_matches = [
         row
         for row in instruments
@@ -546,7 +640,7 @@ def _instrument_for(
         and row.currency.upper() == currency.upper()
         and not (conid and row.conid)
     ]
-    return symbol_matches[0] if len(symbol_matches) == 1 else None
+    return agreeing(symbol_matches)
 
 
 def _country_for(
@@ -574,6 +668,11 @@ def _country_for(
 def _converted(value: float | None, rate: float | None) -> float | None:
     """Convert one known native amount only when Flex supplied an FX rate."""
     return None if value is None or rate is None else value * rate
+
+
+def _materially_different(left: float, right: float) -> bool:
+    """Return whether two posted monetary facts differ beyond one cent."""
+    return not isclose(left, right, rel_tol=1e-6, abs_tol=0.01)
 
 
 def _line_from_accrual(
@@ -627,22 +726,33 @@ def _realized_line(
             country=country,
         )
         withholding_tax = (
-            line.withholding_tax
-            if line.withholding_tax is not None
-            else cash_withholding
+            cash_withholding
+            if cash_withholding is not None
+            else line.withholding_tax
         )
+        reconciled_net = line.net
+        if cash_withholding is not None and (
+            line.withholding_tax is None
+            or _materially_different(cash_withholding, line.withholding_tax)
+        ):
+            reconciled_net = (
+                line.gross - cash_withholding - line.fee
+                if line.gross is not None and line.fee is not None
+                else None
+            )
         return line.model_copy(
             update={
                 "symbol": cash.symbol.strip(),
                 "payment_date": cash.ts.date(),
                 "fx_rate_to_base": rate,
                 "withholding_tax": withholding_tax,
+                "net": reconciled_net,
                 "base_gross": _converted(line.gross, rate),
                 "base_withholding_tax": _converted(
                     withholding_tax, rate
                 ),
                 "base_fee": _converted(line.fee, rate),
-                "base_net": _converted(line.net, rate),
+                "base_net": _converted(reconciled_net, rate),
             }
         )
     unmatched_net = (
@@ -778,12 +888,15 @@ def _effective_tax_rate(
             return None
         if accrual.gross_amount <= 0:
             return None
-        if accrual.tax is not None:
+        cash_tax, withholding_ambiguous = withholding_associations[cash_index]
+        if withholding_ambiguous and accrual.tax is None:
+            return None
+        if cash_tax is not None:
+            tax = cash_tax
+        elif accrual.tax is not None:
             tax = abs(accrual.tax)
         else:
-            tax, withholding_ambiguous = withholding_associations[cash_index]
-            if withholding_ambiguous:
-                return None
+            tax = None
         if tax is None:
             return None
         event_key = _event_key(accrual)
@@ -837,14 +950,16 @@ def _current_eligible_positions(
 
 def _history_days_covered(
     history_start_date: date,
+    history_coverage_end_date: date,
     end_date: date,
 ) -> int:
     """Measure the available intersection with the inclusive trailing year."""
     trailing_start = end_date - timedelta(days=364)
     overlap_start = max(history_start_date, trailing_start)
-    if overlap_start > end_date:
+    overlap_end = min(history_coverage_end_date, end_date)
+    if overlap_start > overlap_end:
         return 0
-    return min(365, (end_date - overlap_start).days + 1)
+    return min(365, (overlap_end - overlap_start).days + 1)
 
 
 def _annual_estimate(
@@ -853,6 +968,7 @@ def _annual_estimate(
     accruals: list[FlexDividendAccrual],
     history_end_date: date,
     history_start_date: date,
+    history_coverage_end_date: date,
     limitations: list[str],
 ) -> AnnualDividendEstimate:
     """Estimate annual holding income from unique trailing positive accrual rates."""
@@ -965,7 +1081,11 @@ def _annual_estimate(
         and eligible_base_market_value > 0
         else None
     )
-    history_days = _history_days_covered(history_start_date, history_end_date)
+    history_days = _history_days_covered(
+        history_start_date,
+        history_coverage_end_date,
+        history_end_date,
+    )
     return AnnualDividendEstimate(
         holdings=holdings,
         estimated_base_gross=estimated_base_gross,
@@ -1022,8 +1142,12 @@ def _summary(
     expected: list[DividendIncomeLine],
 ) -> DividendIncomeSummary:
     """Create status totals, attribution buckets, and realized contribution rank."""
-    all_lines = realized + expected
-    country_lines = [line for line in all_lines if line.fx_rate_to_base is not None]
+    realized_country = [
+        line for line in realized if line.fx_rate_to_base is not None
+    ]
+    expected_country = [
+        line for line in expected if line.fx_rate_to_base is not None
+    ]
     contributions: dict[str, float] = defaultdict(float)
     for line in realized:
         if line.base_net is not None:
@@ -1032,11 +1156,21 @@ def _summary(
     return DividendIncomeSummary(
         realized=_totals(realized, base=True),
         expected=_totals(expected, base=True),
-        by_currency=_group_totals(
-            all_lines, field_name="currency", base=False
+        by_currency=DividendAttribution(
+            realized=_group_totals(
+                realized, field_name="currency", base=False
+            ),
+            expected=_group_totals(
+                expected, field_name="currency", base=False
+            ),
         ),
-        by_country=_group_totals(
-            country_lines, field_name="country", base=True
+        by_country=DividendAttribution(
+            realized=_group_totals(
+                realized_country, field_name="country", base=True
+            ),
+            expected=_group_totals(
+                expected_country, field_name="country", base=True
+            ),
         ),
         top_contributors=[
             DividendContribution(symbol=symbol, base_net=base_net)
@@ -1063,11 +1197,23 @@ def build_dividend_income_report(
     """
     effective_history_start = history_start_date or start_date
     effective_history_end = history_end_date or end_date
+    if dataset.statement_from_date is not None:
+        effective_history_start = max(
+            effective_history_start, dataset.statement_from_date
+        )
+    history_coverage_end = effective_history_end
+    if dataset.statement_to_date is not None:
+        history_coverage_end = min(
+            history_coverage_end, dataset.statement_to_date
+        )
     limitations: list[str] = []
-    accruals = _reduce_accrual_lifecycle(dataset.dividend_accruals)
     dividend_cash = _reduce_dividend_cash_lifecycle(
         dataset.cash_transactions,
         limitations=limitations,
+    )
+    accruals = _reduce_accrual_lifecycle(
+        dataset.dividend_accruals,
+        confirmed_cash=dividend_cash,
     )
     realized_associations = _associate_cash_to_accruals(dividend_cash, accruals)
     withholding_associations = _associate_withholdings(
@@ -1088,11 +1234,24 @@ def build_dividend_income_report(
             currency=cash.currency,
             instruments=dataset.instruments,
         )
-        cash_withholding, withholding_ambiguous = (
-            withholding_associations[cash_index]
-            if accrual is None or accrual.tax is None
-            else (None, False)
+        cash_withholding, withholding_ambiguous = withholding_associations[
+            cash_index
+        ]
+        accrual_tax = (
+            abs(accrual.tax)
+            if accrual is not None and accrual.tax is not None
+            else None
         )
+        if (
+            cash_withholding is not None
+            and accrual_tax is not None
+            and _materially_different(cash_withholding, accrual_tax)
+        ):
+            limitations.append(
+                f"Realized dividend for {cash.symbol.strip()} used posted "
+                f"withholding cash because it materially differed from the "
+                "accrual tax; annual effective tax also uses the posted amount."
+            )
         realized.append(
             _realized_line(
                 cash,
@@ -1103,10 +1262,17 @@ def build_dividend_income_report(
             )
         )
         if withholding_ambiguous:
-            limitations.append(
-                f"Realized dividend for {cash.symbol.strip()} had ambiguous "
-                "withholding cash; tax and unmatched net were not inferred."
-            )
+            if accrual_tax is None:
+                limitations.append(
+                    f"Realized dividend for {cash.symbol.strip()} had ambiguous "
+                    "withholding cash; tax and unmatched net were not inferred."
+                )
+            else:
+                limitations.append(
+                    f"Realized dividend for {cash.symbol.strip()} had ambiguous "
+                    "withholding cash; accrual tax was retained without cash "
+                    "reconciliation."
+                )
         if ambiguous:
             limitations.append(
                 f"Realized dividend for {cash.symbol.strip()} had an ambiguous "
@@ -1155,6 +1321,22 @@ def build_dividend_income_report(
                 f"{line.status.title()} dividend for {line.symbol} has no Flex "
                 "FX rate; native values were retained and base values excluded."
             )
+    annual_estimate = _annual_estimate(
+        dataset=dataset,
+        accruals=accruals,
+        history_end_date=effective_history_end,
+        history_start_date=effective_history_start,
+        history_coverage_end_date=history_coverage_end,
+        limitations=limitations,
+    )
+    resolved_coverage_note = coverage_note
+    if resolved_coverage_note is None and not annual_estimate.complete_history:
+        resolved_coverage_note = (
+            f"Flex statement coverage from {effective_history_start.isoformat()} "
+            f"through {history_coverage_end.isoformat()} intersects "
+            f"{annual_estimate.history_days_covered} of the trailing 365 days; "
+            "the annual estimate is an unscaled lower bound."
+        )
     return DividendIncomeReport(
         start_date=start_date,
         end_date=end_date,
@@ -1162,13 +1344,7 @@ def build_dividend_income_report(
         realized_dividends=realized,
         expected_dividends=expected,
         summary=_summary(realized, expected),
-        annual_estimate=_annual_estimate(
-            dataset=dataset,
-            accruals=accruals,
-            history_end_date=effective_history_end,
-            history_start_date=effective_history_start,
-            limitations=limitations,
-        ),
-        coverage_note=coverage_note,
+        annual_estimate=annual_estimate,
+        coverage_note=resolved_coverage_note,
         data_limitations=limitations,
     )

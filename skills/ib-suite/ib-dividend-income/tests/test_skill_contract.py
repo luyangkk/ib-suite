@@ -27,14 +27,14 @@ def _frontmatter(path: Path) -> tuple[dict[str, Any], str]:
 
 
 def test_skill_frontmatter_matches_openclaw_contract() -> None:
-    """The skill is discoverable only on supported configured Python hosts."""
+    """The skill stays discoverable so its own Flex onboarding can run."""
     frontmatter, _ = _frontmatter(SKILL_PATH)
 
     assert frontmatter["name"] == SKILL_DIR.name == "ib-dividend-income"
     assert frontmatter["description"].startswith("Read-only")
     openclaw = frontmatter["metadata"]["openclaw"]
     assert openclaw["requires"]["bins"] == ["python3"]
-    assert openclaw["requires"]["config"] == ["config.yaml"]
+    assert "config" not in openclaw["requires"]
     assert openclaw["os"] == ["darwin", "linux"]
 
 
@@ -68,6 +68,7 @@ def test_skill_defines_presentation_and_setup_behavior() -> None:
         "expected totals",
         "currency attribution",
         "country attribution",
+        "separate realized and expected attribution",
         "highest-contributing holdings",
         "annual estimate",
         "portfolio dividend yield",

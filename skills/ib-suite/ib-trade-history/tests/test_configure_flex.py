@@ -249,3 +249,17 @@ def test_cli_window_help_documents_period_keys():
     ).stdout
     assert "mtd" in help_text
     assert "ytd" in help_text
+
+
+def test_cli_help_only_guides_token_input_through_stdin() -> None:
+    """User-visible help never recommends putting a Flex token in argv."""
+    completed = subprocess.run(
+        [sys.executable, str(SPEC), "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    help_text = completed.stdout + completed.stderr
+
+    assert "--token TOKEN" not in help_text
+    assert "--token-stdin" in help_text

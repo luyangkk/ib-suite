@@ -424,6 +424,94 @@ def test_reconcile_reduces_post_reversal_and_corrected_posting_lifecycle() -> No
     assert realized.quantity == 100.0
 
 
+def test_reconcile_cash_confirmed_po_re_payout_retains_economic_accrual() -> None:
+    """A pay-date Re closes an accrual but confirmed cash preserves its economics."""
+    posting = _accrual()
+    payout_reversal = posting.model_copy(
+        update={
+            "accrual_date": posting.pay_date,
+            "quantity": -100.0,
+            "tax": 3.75,
+            "fee": 0.0,
+            "gross_rate": -0.25,
+            "gross_amount": -25.0,
+            "net_amount": -21.25,
+            "code": "RE",
+            "report_date": posting.pay_date,
+        }
+    )
+    dataset = _dataset(
+        cash=[
+            _cash(),
+            _cash(amount=-3.75, transaction_type="Withholding Tax"),
+        ],
+        accruals=[posting, payout_reversal],
+        positions=[_position()],
+    )
+
+    report = build_dividend_income_report(
+        dataset,
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        history_start_date=date(2025, 8, 1),
+    )
+
+    realized = report.realized_dividends[0]
+    assert realized.gross == 25.0
+    assert realized.quantity == 100.0
+    assert report.summary.realized.gross == 25.0
+    assert report.annual_estimate.holdings[0].trailing_gross_rate == 0.25
+    assert report.annual_estimate.estimated_base_gross == 25.0
+
+
+def test_reconcile_po_re_without_confirmed_cash_remains_cancelled() -> None:
+    """The same zeroed lifecycle without surviving cash is a genuine cancellation."""
+    posting = _accrual()
+    reversal = posting.model_copy(
+        update={
+            "quantity": -100.0,
+            "tax": 3.75,
+            "gross_rate": -0.25,
+            "gross_amount": -25.0,
+            "net_amount": -21.25,
+            "code": "RE",
+        }
+    )
+    report = build_dividend_income_report(
+        _dataset(accruals=[posting, reversal], positions=[_position()]),
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        history_start_date=date(2025, 8, 1),
+    )
+
+    assert report.realized_dividends == []
+    assert report.annual_estimate.estimated_base_gross == 0.0
+
+
+def test_reconcile_cash_confirmed_po_re_uses_missing_conid_symbol_fallback() -> None:
+    """Cash can prove a zeroed payout when only the accrual omits its conid."""
+    posting = _accrual(conid=None)
+    reversal = posting.model_copy(
+        update={
+            "quantity": -100.0,
+            "tax": 3.75,
+            "gross_rate": -0.25,
+            "gross_amount": -25.0,
+            "net_amount": -21.25,
+            "code": "RE",
+        }
+    )
+
+    report = build_dividend_income_report(
+        _dataset(cash=[_cash(conid="1")], accruals=[posting, reversal]),
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+    )
+
+    assert report.realized_dividends[0].gross == 25.0
+    assert report.realized_dividends[0].quantity == 100.0
+
+
 def test_reconcile_reduces_reversed_cash_posting_before_realization() -> None:
     """A fully reversed cash dividend is not treated as confirmed realized income."""
     dataset = _dataset(
@@ -757,12 +845,15 @@ def test_aggregate_separates_status_and_attributes_native_and_base_totals() -> N
         "fee": pytest.approx(0.0),
         "net": pytest.approx(9.9),
     }
-    assert report.summary.by_currency["USD"].gross == 25.0
-    assert report.summary.by_currency["SGD"].gross == 20.0
-    assert report.summary.by_currency["EUR"].gross == 10.0
-    assert report.summary.by_country["US"].gross == 25.0
-    assert report.summary.by_country["SG"].gross == 15.0
-    assert report.summary.by_country["DE"].gross == pytest.approx(11.0)
+    assert report.summary.by_currency.realized["USD"].gross == 25.0
+    assert report.summary.by_currency.realized["SGD"].gross == 20.0
+    assert "EUR" not in report.summary.by_currency.realized
+    assert report.summary.by_currency.expected["EUR"].gross == 10.0
+    assert "USD" not in report.summary.by_currency.expected
+    assert report.summary.by_country.realized["US"].gross == 25.0
+    assert report.summary.by_country.realized["SG"].gross == 15.0
+    assert "DE" not in report.summary.by_country.realized
+    assert report.summary.by_country.expected["DE"].gross == pytest.approx(11.0)
     assert [item.symbol for item in report.summary.top_contributors] == [
         "AAPL",
         "SGFUND",
@@ -807,9 +898,101 @@ def test_aggregate_missing_fx_keeps_native_values_and_null_base_values() -> None
         "fee": None,
         "net": None,
     }
-    assert report.summary.by_currency["CAD"].gross == 25.0
-    assert report.summary.by_country == {}
+    assert report.summary.by_currency.realized["CAD"].gross == 25.0
+    assert report.summary.by_currency.expected == {}
+    assert report.summary.by_country.realized == {}
+    assert report.summary.by_country.expected == {}
     assert any("fx" in item.lower() for item in report.data_limitations)
+
+
+def test_country_attribution_accepts_duplicate_agreeing_instrument_rows() -> None:
+    """Duplicate SecurityInfo facts with the same country are not ambiguous."""
+    instrument = _instrument()
+    report = build_dividend_income_report(
+        _dataset(
+            cash=[_cash()],
+            accruals=[_accrual()],
+            instruments=[instrument, instrument.model_copy()],
+        ),
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+    )
+
+    assert report.realized_dividends[0].country == "US"
+    assert report.summary.by_country.realized["US"].gross == 25.0
+
+
+def test_country_attribution_keeps_genuinely_conflicting_instruments_unknown() -> None:
+    """Two conid matches with different listing countries remain unresolved."""
+    report = build_dividend_income_report(
+        _dataset(
+            cash=[_cash()],
+            accruals=[_accrual()],
+            instruments=[
+                _instrument(exchange="NASDAQ", isin="US0378331005"),
+                _instrument(exchange="SGX", isin="SG0000000001"),
+            ],
+        ),
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+    )
+
+    assert report.realized_dividends[0].country == "UNKNOWN"
+
+
+def test_unique_cash_withholding_overrides_stale_accrual_tax_and_annual_rate() -> None:
+    """Actual posted tax drives realized and annual results when accrual disagrees."""
+    dataset = _dataset(
+        cash=[
+            _cash(),
+            _cash(amount=-5.0, transaction_type="Withholding Tax"),
+        ],
+        accruals=[_accrual(tax=-3.75, net=21.25)],
+        positions=[_position()],
+    )
+
+    report = build_dividend_income_report(
+        dataset,
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        history_start_date=date(2025, 8, 1),
+    )
+
+    realized = report.realized_dividends[0]
+    assert realized.withholding_tax == 5.0
+    assert realized.net == 20.0
+    assert realized.base_withholding_tax == 5.0
+    assert realized.base_net == 20.0
+    holding = report.annual_estimate.holdings[0]
+    assert holding.effective_tax_rate == pytest.approx(0.2)
+    assert holding.estimated_net == pytest.approx(20.0)
+    assert any(
+        "posted withholding" in limitation.lower()
+        and "accrual tax" in limitation.lower()
+        for limitation in report.data_limitations
+    )
+
+
+def test_agreeing_cash_withholding_preserves_known_net_when_fee_is_missing() -> None:
+    """An agreeing tax posting must not erase an already reported accrual net."""
+    dataset = _dataset(
+        cash=[
+            _cash(),
+            _cash(amount=-3.75, transaction_type="Withholding Tax"),
+        ],
+        accruals=[_accrual(tax=-3.75, fee=None, net=21.25)],
+    )
+
+    report = build_dividend_income_report(
+        dataset,
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+    )
+
+    realized = report.realized_dividends[0]
+    assert realized.withholding_tax == 3.75
+    assert realized.net == 21.25
+    assert realized.base_net == 21.25
 
 
 @pytest.mark.parametrize(

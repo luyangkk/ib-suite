@@ -63,8 +63,13 @@ def _redact_flex_message(message: str, sensitive_values: tuple[str, ...]) -> str
     for value in sorted(filter(None, sensitive_values), key=len, reverse=True):
         redacted = redacted.replace(value, "[REDACTED]")
     redacted = re.sub(r"https?://\S+", "[REDACTED_URL]", redacted)
-    return re.sub(
+    redacted = re.sub(
         r"(?i)\b(?:t|q)=[^&\s]+", "[REDACTED_PARAMETER]", redacted
+    )
+    return re.sub(
+        r"(?i)\baccount(?:[ _-]?id)?(?:\s*[:=]\s*|\s+)[^\s&,;]+",
+        "account_id=[REDACTED]",
+        redacted,
     )
 
 
@@ -208,7 +213,7 @@ _DIVIDEND_SECTION_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         ),
     ),
     "FinancialInstrumentInformation": (
-        ("FinancialInstrumentInfo",),
+        ("SecurityInfo", "FinancialInstrumentInfo"),
         (
             "assetCategory",
             "symbol",
@@ -220,6 +225,13 @@ _DIVIDEND_SECTION_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
             "multiplier",
             "subCategory",
         ),
+    ),
+}
+
+_DIVIDEND_SECTION_ALIASES: dict[str, tuple[str, ...]] = {
+    "FinancialInstrumentInformation": (
+        "SecuritiesInfo",
+        "FinancialInstrumentInformation",
     ),
 }
 
@@ -236,10 +248,17 @@ def _section_rows(
     row_names: tuple[str, ...],
 ) -> tuple[list[ET.Element], list[ET.Element]]:
     """Return matching section containers and their known record elements."""
-    if statement.tag == section_name:
+    container_names = _DIVIDEND_SECTION_ALIASES.get(
+        section_name, (section_name,)
+    )
+    if statement.tag in container_names:
         sections = [statement]
     else:
-        sections = list(statement.iter(section_name))
+        sections = [
+            section
+            for container_name in container_names
+            for section in statement.iter(container_name)
+        ]
     if section_name == "AccountInformation":
         return sections, sections
     rows = [
@@ -249,6 +268,12 @@ def _section_rows(
         for row in section.iter(row_name)
     ]
     return sections, rows
+
+
+def _is_relevant_cash_element(row: ET.Element) -> bool:
+    """Return whether a cash row can prove dividend income or withholding."""
+    transaction_type = (row.get("type") or "").casefold()
+    return "dividend" in transaction_type or "withholding" in transaction_type
 
 
 def _validate_dividend_schema(root: ET.Element) -> None:
@@ -261,7 +286,15 @@ def _validate_dividend_schema(root: ET.Element) -> None:
             if not sections:
                 missing_sections.append(section_name)
                 continue
-            for row in rows:
+            validation_rows = rows
+            if section_name == "CashTransactions":
+                for row in rows:
+                    if "type" not in row.attrib:
+                        missing_fields.append("CashTransactions.type")
+                validation_rows = [
+                    row for row in rows if _is_relevant_cash_element(row)
+                ]
+            for row in validation_rows:
                 missing_fields.extend(
                     f"{section_name}.{field_name}"
                     for field_name in field_names
@@ -373,7 +406,29 @@ def _all_dividend_rows(
     for statement in _statement_scopes(root):
         _, statement_rows = _section_rows(statement, section_name, row_names)
         rows.extend(statement_rows)
+    if section_name == "CashTransactions":
+        return [row for row in rows if _is_relevant_cash_element(row)]
     return rows
+
+
+def _statement_period(root: ET.Element) -> tuple[date | None, date | None]:
+    """Return the conservative intersection of all statement coverage periods."""
+    statements = list(root.iter("FlexStatement"))
+    if not statements:
+        return None, None
+    starts = [
+        _section_date(statement, "FlexStatement", "fromDate")
+        for statement in statements
+    ]
+    ends = [
+        _section_date(statement, "FlexStatement", "toDate")
+        for statement in statements
+    ]
+    coverage_start = max(starts)
+    coverage_end = min(ends)
+    if coverage_start > coverage_end:
+        raise ValueError("FlexStatement coverage periods do not overlap")
+    return coverage_start, coverage_end
 
 
 def _parse_cash_transaction(element: ET.Element) -> FlexCashTransaction:
@@ -522,11 +577,14 @@ def parse_flex_dividend_dataset(xml_text: str) -> FlexDividendDataset:
     }
     if len(base_currencies) != 1:
         raise ValueError("Flex AccountInformation field currency is inconsistent")
+    statement_from_date, statement_to_date = _statement_period(root)
 
     change_section = "ChangeInDividendAccruals"
     open_section = "OpenDividendAccruals"
     return FlexDividendDataset(
         base_currency=next(iter(base_currencies)),
+        statement_from_date=statement_from_date,
+        statement_to_date=statement_to_date,
         cash_transactions=[
             _parse_cash_transaction(row)
             for row in _all_dividend_rows(root, "CashTransactions")
@@ -618,13 +676,25 @@ def parse_flex_trades(xml_text: str) -> list[Execution]:
 def fetch_flex_report(token: str, query_id: str, http_get=requests.get,
                       poll_interval: float = 1.0, max_polls: int = 10) -> str:
     """Run the Flex two-step handshake and return raw statement XML."""
-    send = http_get(
-        f"{_FLEX_BASE}/SendRequest",
-        params={"t": token, "q": query_id, "v": "3"},
-        headers=_FLEX_HEADERS,
-    )
-    send.raise_for_status()
-    root = ET.fromstring(send.text)
+    sensitive_values = (token, query_id)
+    try:
+        send = http_get(
+            f"{_FLEX_BASE}/SendRequest",
+            params={"t": token, "q": query_id, "v": "3"},
+            headers=_FLEX_HEADERS,
+        )
+        send.raise_for_status()
+    except requests.RequestException as exc:
+        message = _redact_flex_message(str(exc), sensitive_values)
+        raise FlexServiceError(
+            "transport", f"SendRequest failed: {message or 'request error'}"
+        ) from None
+    try:
+        root = ET.fromstring(send.text)
+    except ET.ParseError:
+        raise FlexServiceError(
+            "malformed_response", "SendRequest returned malformed XML."
+        ) from None
     _raise_flex_error(root, (token, query_id))
     ref = root.findtext("ReferenceCode")
     url = (
@@ -633,17 +703,32 @@ def fetch_flex_report(token: str, query_id: str, http_get=requests.get,
         or f"{_FLEX_BASE}/GetStatement"
     )
     if not ref:
-        raise RuntimeError("Flex SendRequest succeeded without a reference code")
+        raise FlexServiceError(
+            "handshake", "SendRequest response omitted the reference code."
+        )
 
     statement_root: ET.Element | None = None
     for _ in range(max_polls):
-        stmt = http_get(
-            url,
-            params={"t": token, "q": ref, "v": "3"},
-            headers=_FLEX_HEADERS,
-        )
-        stmt.raise_for_status()
-        statement_root = ET.fromstring(stmt.text)
+        try:
+            stmt = http_get(
+                url,
+                params={"t": token, "q": ref, "v": "3"},
+                headers=_FLEX_HEADERS,
+            )
+            stmt.raise_for_status()
+        except requests.RequestException as exc:
+            message = _redact_flex_message(
+                str(exc), (token, query_id, ref)
+            )
+            raise FlexServiceError(
+                "transport", f"GetStatement failed: {message or 'request error'}"
+            ) from None
+        try:
+            statement_root = ET.fromstring(stmt.text)
+        except ET.ParseError:
+            raise FlexServiceError(
+                "malformed_response", "GetStatement returned malformed XML."
+            ) from None
         if "Statement generation in progress" in stmt.text:
             time.sleep(poll_interval)
             continue

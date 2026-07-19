@@ -8,10 +8,12 @@ import re
 import sys
 import time
 import uuid
+import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from datetime import date, timedelta
 from pathlib import Path
 
+import requests
 from pydantic import ValidationError
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,7 +27,7 @@ from flex_fetch import (  # noqa: E402
 )
 from ib_common.config import load_config  # noqa: E402
 from ib_common.dividend_income import build_dividend_income_report  # noqa: E402
-from ib_common.flex import parse_iso_date, select_numeric_window  # noqa: E402
+from ib_common.flex import parse_iso_date, select_flex_window  # noqa: E402
 
 LOGGER = logging.getLogger("ib_dividend_income")
 GUIDE = "flex-query-setup.md"
@@ -79,6 +81,11 @@ def _sanitize(message: str, sensitive_values: tuple[str, ...] = ()) -> str:
     normalized = re.sub(
         r"(?i)\b(?:reference[ _]?code)(?:\s*[:=]\s*|\s+)[^\s&,;]+",
         "reference_code=[REDACTED]",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?i)\baccount(?:[ _-]?id)?(?:\s*[:=]\s*|\s+)[^\s&,;]+",
+        "account_id=[REDACTED]",
         normalized,
     )
     normalized = re.sub(
@@ -138,19 +145,11 @@ def dividend_income(
         _log(logging.INFO, "setup_required", run_id=resolved_run_id)
         return _state("setup_required", ["flex.token"], resolved_run_id)
 
-    if any(
-        key.isdigit() and not query_id.strip()
-        for key, query_id in cfg.flex.query_ids.items()
-    ):
+    if any(not query_id.strip() for query_id in cfg.flex.query_ids.values()):
         _log(logging.INFO, "setup_required", run_id=resolved_run_id)
         return _state("setup_required", ["flex.query_ids"], resolved_run_id)
 
-    numeric_windows = {
-        key: query_id
-        for key, query_id in cfg.flex.query_ids.items()
-        if key.isdigit()
-    }
-    if not numeric_windows:
+    if not cfg.flex.query_ids:
         _log(logging.INFO, "setup_required", run_id=resolved_run_id)
         return _state("setup_required", ["flex.query_ids"], resolved_run_id)
 
@@ -166,8 +165,8 @@ def dividend_income(
     )
     required_days = (resolved_today - required_start).days + 1
     try:
-        window, query_id, _ = select_numeric_window(
-            numeric_windows,
+        window, query_id, _ = select_flex_window(
+            cfg.flex.query_ids,
             required_start,
             resolved_today,
             allow_partial=False,
@@ -203,7 +202,7 @@ def dividend_income(
             fields={"missing_count": len(missing)},
         )
         return _state("query_update_required", missing, resolved_run_id)
-    except FlexServiceError as exc:
+    except (FlexServiceError, requests.RequestException, ET.ParseError) as exc:
         safe_error = _sanitize(str(exc), (cfg.flex.token, query_id))
         _log(
             logging.ERROR,
@@ -242,14 +241,60 @@ def dividend_income(
             "instruments": len(dataset.instruments),
         },
     )
-    theoretical_start = resolved_today - timedelta(days=int(window) - 1)
-    report = build_dividend_income_report(
+    _log(
+        logging.INFO,
+        "coverage_observed",
+        run_id=resolved_run_id,
+        fields={
+            "from_date": dataset.statement_from_date or "unavailable",
+            "to_date": dataset.statement_to_date or "unavailable",
+            "history_end": history_end_date,
+        },
+    )
+    if window.isdigit():
+        theoretical_start = resolved_today - timedelta(days=int(window) - 1)
+    elif window == "mtd":
+        theoretical_start = resolved_today.replace(day=1)
+    else:
+        theoretical_start = date(resolved_today.year, 1, 1)
+    report_model = build_dividend_income_report(
         dataset,
         start_date,
         end_date,
         history_start_date=theoretical_start,
         history_end_date=history_end_date,
-    ).model_dump(mode="json")
+    )
+    matched_count = sum(
+        line.gross is not None or line.quantity is not None
+        for line in report_model.realized_dividends
+    )
+    _log(
+        logging.INFO,
+        "association_completed",
+        run_id=resolved_run_id,
+        fields={
+            "realized_count": len(report_model.realized_dividends),
+            "matched_count": matched_count,
+            "unmatched_count": (
+                len(report_model.realized_dividends) - matched_count
+            ),
+        },
+    )
+    _log(
+        logging.INFO,
+        "calculation_completed",
+        run_id=resolved_run_id,
+        fields={
+            "realized_count": len(report_model.realized_dividends),
+            "expected_count": len(report_model.expected_dividends),
+            "annual_holding_count": len(report_model.annual_estimate.holdings),
+            "history_days_covered": (
+                report_model.annual_estimate.history_days_covered
+            ),
+            "limitation_count": len(report_model.data_limitations),
+        },
+    )
+    report = report_model.model_dump(mode="json")
     report["run_id"] = resolved_run_id
     elapsed_ms = round((time.monotonic() - started) * 1000)
     _log(
@@ -302,7 +347,7 @@ def main(
             fetcher=fetcher,
             run_id=run_id,
         )
-    except (FileNotFoundError, OSError, ValueError):
+    except (FileNotFoundError, PermissionError, IsADirectoryError, ValueError):
         _log(
             logging.ERROR,
             "cli_error",

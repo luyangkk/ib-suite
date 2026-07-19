@@ -197,6 +197,8 @@ class FlexDividendDataset(BaseModel):
     """Strictly parsed raw records from the six dividend Flex sections."""
 
     base_currency: str
+    statement_from_date: date | None = None
+    statement_to_date: date | None = None
     cash_transactions: list[FlexCashTransaction]
     dividend_accruals: list[FlexDividendAccrual]
     open_dividend_accruals: list[FlexDividendAccrual]
@@ -240,13 +242,20 @@ class DividendContribution(BaseModel):
     base_net: float
 
 
+class DividendAttribution(BaseModel):
+    """Status-separated attribution buckets in one stated currency basis."""
+
+    realized: dict[str, DividendTotals]
+    expected: dict[str, DividendTotals]
+
+
 class DividendIncomeSummary(BaseModel):
     """Separate base totals plus native-currency and listing-country attribution."""
 
     realized: DividendTotals
     expected: DividendTotals
-    by_currency: dict[str, DividendTotals]
-    by_country: dict[str, DividendTotals]
+    by_currency: DividendAttribution
+    by_country: DividendAttribution
     top_contributors: list[DividendContribution]
 
 

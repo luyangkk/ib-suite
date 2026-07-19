@@ -5,7 +5,6 @@ metadata:
   openclaw:
     requires:
       bins: [python3]
-      config: [config.yaml]
     os: [darwin, linux]
 ---
 
@@ -124,8 +123,10 @@ quantity, or income values.
 After the two tables, present all supplied summaries without recomputation:
 
 1. separate realized totals and expected totals;
-2. currency attribution, keeping native currencies separate;
-3. country attribution in base currency, including `UNKNOWN` as unresolved
+2. currency attribution, using the supplied separate realized and expected attribution
+   buckets and keeping native currencies separate;
+3. country attribution, also using separate realized and expected attribution
+   buckets in base currency, including `UNKNOWN` as unresolved
    listing market rather than issuer domicile or tax residence;
 4. highest-contributing holdings ranked by realized base-currency net;
 5. annual estimate, its history coverage, and portfolio dividend yield.

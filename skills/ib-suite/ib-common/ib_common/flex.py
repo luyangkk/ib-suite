@@ -36,7 +36,57 @@ def resolve_flex_token(cfg: Config) -> str:
     if cfg.flex.token:
         return cfg.flex.token
     raise ValueError(
-        "Flex token is not configured; run configure_flex.py --token before querying"
+        "Flex token is not configured; run configure_flex.py --token-stdin "
+        "before querying"
+    )
+
+
+def select_flex_window(
+    query_ids: dict[str, str],
+    required_start: date,
+    today: date,
+    *,
+    allow_partial: bool,
+) -> tuple[str, str, str | None]:
+    """Select the smallest numeric, MTD, or YTD query covering a start date."""
+    candidates: list[tuple[int, date, str, str]] = []
+    for key, query_id in query_ids.items():
+        if key.isdigit():
+            candidate_start = today - timedelta(days=int(key) - 1)
+        elif key == "mtd":
+            candidate_start = today.replace(day=1)
+        elif key == "ytd":
+            candidate_start = date(today.year, 1, 1)
+        else:
+            continue
+        span = (today - candidate_start).days + 1
+        candidates.append((span, candidate_start, key, query_id))
+
+    if not candidates:
+        raise ValueError(
+            "no Flex windows configured; run configure_flex.py with --window"
+        )
+
+    covering = sorted(
+        (candidate for candidate in candidates if candidate[1] <= required_start),
+        key=lambda candidate: (candidate[0], candidate[2]),
+    )
+    if covering:
+        _, _, key, query_id = covering[0]
+        return key, query_id, None
+
+    largest = min(candidates, key=lambda candidate: (candidate[1], candidate[2]))
+    span, _, key, query_id = largest
+    gap = (today - required_start).days + 1
+    note = (
+        "requested start date precedes the largest configured Flex window "
+        f"({key}, {span} days); results may be incomplete"
+    )
+    if allow_partial:
+        return key, query_id, note
+    raise ValueError(
+        f"requested date range requires {gap} days, but the largest configured "
+        f"Flex window covers {span} days; add a window with at least {gap} days"
     )
 
 

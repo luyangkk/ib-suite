@@ -3,6 +3,7 @@ import importlib.util
 import xml.etree.ElementTree as ET
 
 import pytest
+import requests
 
 SPEC = Path(__file__).parent.parent / "scripts" / "flex_fetch.py"
 spec = importlib.util.spec_from_file_location("flex_fetch", SPEC)
@@ -24,7 +25,12 @@ def _without_section(xml_text: str, section_name: str) -> str:
     root = ET.fromstring(xml_text)
     statement = root.find(".//FlexStatement")
     assert statement is not None
-    section = statement.find(section_name)
+    xml_section_name = (
+        "SecuritiesInfo"
+        if section_name == "FinancialInstrumentInformation"
+        else section_name
+    )
+    section = statement.find(xml_section_name)
     assert section is not None
     statement.remove(section)
     return ET.tostring(root, encoding="unicode")
@@ -59,6 +65,8 @@ def test_parse_flex_dividend_dataset_keeps_normalized_raw_records() -> None:
     dataset = flex.parse_flex_dividend_dataset(xml_text)
 
     assert dataset.base_currency == "USD"
+    assert dataset.statement_from_date.isoformat() == "2026-01-01"
+    assert dataset.statement_to_date.isoformat() == "2026-07-31"
     assert len(dataset.cash_transactions) == 2
     assert dataset.cash_transactions[0].symbol == "AAPL"
     assert dataset.cash_transactions[0].fx_rate_to_base == 1.0
@@ -93,6 +101,79 @@ def test_blank_optional_dividend_accrual_dates_become_none(
     dataset = flex.parse_flex_dividend_dataset(xml_text)
 
     assert getattr(dataset.dividend_accruals[0], model_field) is None
+
+
+def test_parse_flex_dividend_dataset_accepts_legacy_instrument_tags() -> None:
+    """Legacy fixture aliases remain compatible with real SecuritiesInfo tags."""
+    xml_text = DIVIDEND_FIX.read_text(encoding="utf-8")
+    xml_text = xml_text.replace("SecuritiesInfo", "FinancialInstrumentInformation")
+    xml_text = xml_text.replace("SecurityInfo", "FinancialInstrumentInfo")
+
+    dataset = flex.parse_flex_dividend_dataset(xml_text)
+
+    assert dataset.instruments[0].symbol == "AAPL"
+
+
+def test_unrelated_cash_transaction_with_blank_security_fields_is_ignored() -> None:
+    """A benign deposit row cannot invalidate relevant dividend cash parsing."""
+    root = ET.fromstring(DIVIDEND_FIX.read_text(encoding="utf-8"))
+    section = root.find(".//CashTransactions")
+    assert section is not None
+    section.insert(
+        0,
+        ET.Element(
+            "CashTransaction",
+            {
+                "accountId": "U0000000",
+                "currency": "USD",
+                "assetCategory": "",
+                "fxRateToBase": "1",
+                "symbol": "",
+                "description": "WIRE DEPOSIT",
+                "conid": "",
+                "underlyingConid": "",
+                "underlyingSymbol": "",
+                "dateTime": "2026-05-01;08:00:00",
+                "amount": "1000",
+                "type": "Deposits/Withdrawals",
+                "tradeID": "",
+                "withholdingTax": "",
+                "code": "",
+            },
+        ),
+    )
+
+    dataset = flex.parse_flex_dividend_dataset(
+        ET.tostring(root, encoding="unicode")
+    )
+
+    assert [row.transaction_type for row in dataset.cash_transactions] == [
+        "Dividends",
+        "Withholding Tax",
+    ]
+
+
+def test_multiple_statement_periods_use_conservative_intersection() -> None:
+    """Linked-account history is complete only across every statement period."""
+    root = ET.fromstring(DIVIDEND_FIX.read_text(encoding="utf-8"))
+    statements = root.find(".//FlexStatements")
+    statement = root.find(".//FlexStatement")
+    assert statements is not None and statement is not None
+    second = ET.fromstring(ET.tostring(statement, encoding="unicode"))
+    second.set("accountId", "ORG-ACCOUNT-2")
+    second.set("fromDate", "2026-02-01")
+    second.set("toDate", "2026-06-30")
+    for row in second.iter():
+        if "accountId" in row.attrib:
+            row.set("accountId", "ORG-ACCOUNT-2")
+    statements.append(second)
+
+    dataset = flex.parse_flex_dividend_dataset(
+        ET.tostring(root, encoding="unicode")
+    )
+
+    assert dataset.statement_from_date.isoformat() == "2026-02-01"
+    assert dataset.statement_to_date.isoformat() == "2026-06-30"
 
 
 @pytest.mark.parametrize(
@@ -137,7 +218,7 @@ def test_required_dividend_dataset_section_errors_are_safe(
         ("OpenPositions", "OpenPosition", "levelOfDetail"),
         (
             "FinancialInstrumentInformation",
-            "FinancialInstrumentInfo",
+            "SecurityInfo",
             "listingExchange",
         ),
     ],
@@ -374,3 +455,55 @@ def test_fetch_flex_report_raises_when_generation_polling_is_exhausted():
         )
 
     assert calls == 3
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        requests.ConnectionError("accountId=ORG-ACCOUNT-99 connection failed"),
+        requests.HTTPError(
+            "503 for https://example.invalid/report?t=secret-token&q=secret-query"
+        ),
+    ],
+)
+def test_fetch_flex_report_normalizes_request_failures(failure: Exception) -> None:
+    """Network and HTTP failures cross the client boundary as safe Flex errors."""
+    class FailedResponse:
+        text = ""
+
+        def raise_for_status(self) -> None:
+            raise failure
+
+    def failed_get(*_args, **_kwargs):
+        if isinstance(failure, requests.ConnectionError):
+            raise failure
+        return FailedResponse()
+
+    with pytest.raises(flex.FlexServiceError) as excinfo:
+        flex.fetch_flex_report(
+            "secret-token",
+            "secret-query",
+            http_get=failed_get,
+        )
+
+    message = str(excinfo.value)
+    assert "secret-token" not in message
+    assert "secret-query" not in message
+    assert "ORG-ACCOUNT-99" not in message
+    assert "https://" not in message
+
+
+def test_fetch_flex_report_normalizes_malformed_handshake_xml() -> None:
+    """Malformed service XML is a safe retrieval error, not a parser traceback."""
+    class MalformedResponse:
+        text = "<FlexStatementResponse"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    with pytest.raises(flex.FlexServiceError, match="malformed XML"):
+        flex.fetch_flex_report(
+            "secret-token",
+            "secret-query",
+            http_get=lambda *_args, **_kwargs: MalformedResponse(),
+        )

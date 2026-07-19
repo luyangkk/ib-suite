@@ -131,7 +131,7 @@ def main() -> None:
     )
     parser.add_argument("--config", required=True, help="path to config.yaml")
     token_group = parser.add_mutually_exclusive_group()
-    token_group.add_argument("--token", help="IBKR Flex token")
+    token_group.add_argument("--token", help=argparse.SUPPRESS)
     token_group.add_argument(
         "--token-stdin",
         action="store_true",
