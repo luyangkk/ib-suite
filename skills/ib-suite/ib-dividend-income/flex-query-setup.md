@@ -26,10 +26,11 @@ and [Flex Web Service API](https://www.interactivebrokers.com/campus/ibkr-api-pa
 5. Under **General Configuration**, set **Date Format: yyyy-MM-dd**,
    **Time Format: HH:mm:ss**, and **Date/Time Separator: ; (semicolon)**. These
    settings produce timestamps such as `2026-07-19;13:45:00`.
-6. Select **Continue**, review all seven sections, fields, accounts, XML output,
+6. Select **Continue**, review the six dividend sections (plus the optional
+   `Trades` section), fields, accounts, XML output,
    and period, then select **Create**.
 
-## 2. Select all seven compatibility sections and fields
+## 2. Select the six dividend sections (and optional Trades) and fields
 
 The names before parentheses are the Client Portal labels; the backticked names
 are the XML attributes validated by the command. Include the section even when
@@ -180,13 +181,13 @@ only then rerun the command with `--force`. Never add `--force` preemptively.
 
 To rotate an expired or exposed token, select **Generate A New Token** in Client
 Portal (this invalidates the prior token), choose its expiration and optional IP
-restriction, then—with explicit confirmation to replace the local token—run:
+restriction, then—with explicit confirmation to replace the local token—run
+(token-only, so no `--target` is needed):
 
 ```bash
 {baseDir}/../.venv/bin/python {baseDir}/../ib-trade-history/scripts/configure_flex.py \
   --config .ib-suite/config.yaml \
   --token-stdin \
-  --target dividend \
   --force
 ```
 
@@ -215,7 +216,8 @@ report is the end-to-end check.
 - Query not visible: sign in with the username that created it and select the
   same account set. Linked accounts may require the master account.
 - Invalid report or missing section after an edit: confirm **Activity** Flex
-  Query (not Trade Confirmation), **XML**, all seven sections, the exact fields,
+  Query (not Trade Confirmation), **XML**, the six dividend sections (plus the
+  optional `Trades` section), the exact fields,
   and the date/time settings, then run the saved query once in Client Portal.
 - Statement temporarily unavailable: wait and retry once later; Activity Flex
   data updates on IBKR's reporting schedule and is not real-time. Do not poll it
