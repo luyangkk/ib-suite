@@ -47,25 +47,35 @@ def test_configure_flex_writes_and_orders_period_windows(tmp_path):
     path.write_text("# local\n", encoding="utf-8")
 
     configure_flex.configure_flex(
-        path, token="t", windows={"30": "q30", "ytd": "qy", "7": "q7", "mtd": "qm"}
+        path, token="t",
+        windows={"30": "q30", "ytd": "qy", "7": "q7", "mtd": "qm"},
+        target="trade_history",
     )
 
     cfg = load_config(path)
-    assert cfg.flex.query_ids == {"7": "q7", "30": "q30", "mtd": "qm", "ytd": "qy"}
-    assert list(cfg.flex.query_ids) == ["7", "30", "mtd", "ytd"]
+    assert cfg.flex.trade_history_query_ids == {
+        "7": "q7", "30": "q30", "mtd": "qm", "ytd": "qy"
+    }
+    assert list(cfg.flex.trade_history_query_ids) == ["7", "30", "mtd", "ytd"]
 
 
 def test_configure_flex_overwriting_period_requires_force(tmp_path):
     """Replacing an existing period key needs an explicit --force."""
     configure_flex = load_module()
     path = tmp_path / "config.yaml"
-    path.write_text("flex:\n  token: t\n  query_ids:\n    ytd: qy\n", encoding="utf-8")
+    path.write_text(
+        "flex:\n  token: t\n  dividend_query_ids:\n    ytd: qy\n", encoding="utf-8"
+    )
 
     with pytest.raises(FileExistsError, match="--force"):
-        configure_flex.configure_flex(path, windows={"ytd": "qy-new"})
+        configure_flex.configure_flex(
+            path, windows={"ytd": "qy-new"}, target="dividend"
+        )
 
-    configure_flex.configure_flex(path, windows={"ytd": "qy-new"}, force=True)
-    assert load_config(path).flex.query_ids == {"ytd": "qy-new"}
+    configure_flex.configure_flex(
+        path, windows={"ytd": "qy-new"}, target="dividend", force=True
+    )
+    assert load_config(path).flex.dividend_query_ids == {"ytd": "qy-new"}
 
 
 @pytest.mark.parametrize("spec", ["7", "=q7", "x=q7", "7=", "0=q7", "-3=q7"])
@@ -82,45 +92,62 @@ def test_configure_flex_writes_token_and_windows(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text("# keep\nconnection:\n  port: 4001\n", encoding="utf-8")
 
-    result = configure_flex.configure_flex(path, token="t", windows={7: "q7"})
+    result = configure_flex.configure_flex(
+        path, token="t", windows={7: "q7"}, target="dividend"
+    )
 
     cfg = load_config(path)
     assert result == {"config": str(path), "ready": True}
     assert cfg.flex.token == "t"
-    assert cfg.flex.query_ids == {"7": "q7"}
+    assert cfg.flex.dividend_query_ids == {"7": "q7"}
     assert "# keep" in path.read_text(encoding="utf-8")
     assert "q7" not in str(result)  # result carries no secret query id
 
 
 def test_configure_flex_merges_new_window_without_force(tmp_path):
-    """Adding a brand-new window merges into existing query_ids."""
+    """Adding a brand-new window merges into the target map only."""
     configure_flex = load_module()
     path = tmp_path / "config.yaml"
-    path.write_text("flex:\n  token: t\n  query_ids:\n    7: q7\n", encoding="utf-8")
+    path.write_text(
+        "flex:\n  token: t\n  trade_history_query_ids:\n    7: q7\n",
+        encoding="utf-8",
+    )
 
-    configure_flex.configure_flex(path, windows={30: "q30"})
+    configure_flex.configure_flex(path, windows={30: "q30"}, target="trade_history")
 
-    assert load_config(path).flex.query_ids == {"7": "q7", "30": "q30"}
+    cfg = load_config(path)
+    assert cfg.flex.trade_history_query_ids == {"7": "q7", "30": "q30"}
+    assert cfg.flex.dividend_query_ids == {}
 
 
 def test_configure_flex_overwriting_window_requires_force(tmp_path):
     """Replacing an existing day key needs an explicit --force."""
     configure_flex = load_module()
     path = tmp_path / "config.yaml"
-    path.write_text("flex:\n  token: t\n  query_ids:\n    7: q7\n", encoding="utf-8")
+    path.write_text(
+        "flex:\n  token: t\n  trade_history_query_ids:\n    7: q7\n",
+        encoding="utf-8",
+    )
 
     with pytest.raises(FileExistsError, match="--force"):
-        configure_flex.configure_flex(path, windows={7: "q7-new"})
+        configure_flex.configure_flex(
+            path, windows={7: "q7-new"}, target="trade_history"
+        )
 
-    configure_flex.configure_flex(path, windows={7: "q7-new"}, force=True)
-    assert load_config(path).flex.query_ids == {"7": "q7-new"}
+    configure_flex.configure_flex(
+        path, windows={7: "q7-new"}, target="trade_history", force=True
+    )
+    assert load_config(path).flex.trade_history_query_ids == {"7": "q7-new"}
 
 
 def test_configure_flex_overwriting_token_requires_force(tmp_path):
     """Replacing an existing token needs an explicit --force."""
     configure_flex = load_module()
     path = tmp_path / "config.yaml"
-    path.write_text("flex:\n  token: old\n  query_ids:\n    7: q7\n", encoding="utf-8")
+    path.write_text(
+        "flex:\n  token: old\n  trade_history_query_ids:\n    7: q7\n",
+        encoding="utf-8",
+    )
 
     with pytest.raises(FileExistsError, match="--force"):
         configure_flex.configure_flex(path, token="new")
@@ -145,7 +172,9 @@ def test_configure_flex_missing_config_directs_to_first_run_setup(tmp_path):
     path = tmp_path / "config.yaml"
 
     with pytest.raises(FileNotFoundError, match="ib-suite first-run setup"):
-        configure_flex.configure_flex(path, token="t", windows={7: "q7"})
+        configure_flex.configure_flex(
+            path, token="t", windows={7: "q7"}, target="trade_history"
+        )
 
 
 def test_configure_flex_keeps_original_when_staged_validation_fails(
@@ -154,7 +183,10 @@ def test_configure_flex_keeps_original_when_staged_validation_fails(
     """A failed staged reload leaves the config untouched and never echoes secrets."""
     configure_flex = load_module()
     path = tmp_path / "config.yaml"
-    original = "# retain\nflex:\n  token: old-token-secret\n  query_ids:\n    7: old-query-secret\n"
+    original = (
+        "# retain\nflex:\n  token: old-token-secret\n"
+        "  trade_history_query_ids:\n    7: old-query-secret\n"
+    )
     path.write_text(original, encoding="utf-8")
 
     def fail_validation(_):
@@ -164,27 +196,35 @@ def test_configure_flex_keeps_original_when_staged_validation_fails(
 
     with pytest.raises(ValueError) as excinfo:
         configure_flex.configure_flex(
-            path, token="new-token-secret", windows={30: "new-query-secret"}, force=True
+            path, token="new-token-secret", windows={30: "new-query-secret"},
+            target="trade_history", force=True,
         )
 
-    # (c) the raised error never leaks the token or any query-id value.
     assert "new-token-secret" not in str(excinfo.value)
     assert "new-query-secret" not in str(excinfo.value)
-    # (a) the real config on disk is byte-for-byte unchanged.
     assert path.read_text(encoding="utf-8") == original
-    # (b) no temp file is left behind in the config's parent directory.
     assert not list(tmp_path.glob(".config.yaml.*.tmp"))
 
 
+def test_configure_flex_windows_require_target(tmp_path):
+    """Writing windows without a target is a usage error."""
+    configure_flex = load_module()
+    path = tmp_path / "config.yaml"
+    path.write_text("flex:\n  token: t\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="--target"):
+        configure_flex.configure_flex(path, windows={7: "q7"})
+
+
 def test_cli_writes_windows_and_never_echoes_values(tmp_path):
-    """The CLI persists windows and prints only the public result."""
+    """The CLI persists windows to the chosen target and prints only the result."""
     path = tmp_path / "config.yaml"
     path.write_text("# local\n", encoding="utf-8")
     token, qid = "cli-token-secret", "cli-query-secret"
 
     ok = subprocess.run(
         [sys.executable, str(SPEC), "--config", str(path),
-         "--token", token, "--window", f"7={qid}"],
+         "--token", token, "--window", f"7={qid}", "--target", "dividend"],
         capture_output=True, text=True, check=False,
     )
 
@@ -192,7 +232,7 @@ def test_cli_writes_windows_and_never_echoes_values(tmp_path):
     assert json.loads(ok.stdout) == {"config": str(path), "ready": True}
     assert token not in ok.stdout + ok.stderr
     assert qid not in ok.stdout + ok.stderr
-    assert load_config(path).flex.query_ids == {"7": qid}
+    assert load_config(path).flex.dividend_query_ids == {"7": qid}
 
 
 def test_cli_reads_token_from_stdin_without_echoing_it(tmp_path: Path) -> None:

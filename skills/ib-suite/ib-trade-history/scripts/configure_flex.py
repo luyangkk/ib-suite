@@ -41,13 +41,19 @@ def configure_flex(
     token: str | None = None,
     windows: Mapping[str, str] | None = None,
     force: bool = False,
+    target: str | None = None,
 ) -> dict:
-    """Persist a Flex token and/or window map, preserving comments safely."""
+    """Persist a Flex token and/or per-skill window map, preserving comments."""
     windows = {str(day): qid for day, qid in dict(windows or {}).items()}
     if token is not None and not token.strip():
         raise ValueError("Flex token must not be blank")
     if token is None and not windows:
         raise ValueError("provide a token or at least one window")
+    if windows and target not in ("trade_history", "dividend"):
+        raise ValueError(
+            "writing Flex windows requires --target trade_history|dividend"
+        )
+    map_key = f"{target}_query_ids" if windows else None
 
     path = Path(config_path)
     if not path.exists():
@@ -74,10 +80,12 @@ def configure_flex(
         doc["flex"] = {}
         flex = doc["flex"]
 
-    existing = flex.get("query_ids")
-    if existing is not None and not isinstance(existing, Mapping):
-        raise ValueError(_CONFIG_ERROR)
-    existing_norm = {str(day): qid for day, qid in dict(existing or {}).items()}
+    existing_norm: dict[str, str] = {}
+    if map_key is not None:
+        existing = flex.get(map_key)
+        if existing is not None and not isinstance(existing, Mapping):
+            raise ValueError(_CONFIG_ERROR)
+        existing_norm = {str(day): qid for day, qid in dict(existing or {}).items()}
 
     if not force:
         if token is not None and flex.get("token") is not None:
@@ -96,7 +104,7 @@ def configure_flex(
         merged = dict(existing_norm)
         merged.update(windows)
         ordered = sorted(merged, key=lambda k: (0, int(k)) if k.isdigit() else (1, k))
-        flex["query_ids"] = {k: merged[k] for k in ordered}
+        flex[map_key] = {k: merged[k] for k in ordered}
 
     temporary_path: Path | None = None
     try:
@@ -111,7 +119,7 @@ def configure_flex(
         if token is not None and config.flex.token != token:
             raise ValueError("staged Flex token did not reload exactly")
         for day, query_id in windows.items():
-            if config.flex.query_ids.get(day) != query_id:
+            if getattr(config.flex, map_key).get(day) != query_id:
                 raise ValueError("staged Flex windows did not reload exactly")
         os.replace(temporary_path, path)
         temporary_path = None
@@ -142,13 +150,17 @@ def main() -> None:
         help="window spec '<days|mtd|ytd>=<query-id>', repeatable",
     )
     parser.add_argument(
+        "--target", choices=["trade_history", "dividend"],
+        help="which skill's window map to write when using --window",
+    )
+    parser.add_argument(
         "--force", action="store_true", help="replace an existing token or window"
     )
     args = parser.parse_args()
     try:
         windows = dict(parse_window(spec) for spec in args.window)
         token = sys.stdin.readline().rstrip("\r\n") if args.token_stdin else args.token
-        result = configure_flex(args.config, token, windows, args.force)
+        result = configure_flex(args.config, token, windows, args.force, args.target)
     except (FileExistsError, FileNotFoundError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(result))
