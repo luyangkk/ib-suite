@@ -192,12 +192,12 @@ def trade_history(
     if period is not None:
         start_date, end_date = resolve_period_bounds(period, resolved_today)
         query_id, coverage_note = select_period_window(
-            cfg.flex.query_ids, period, resolved_today
+            cfg.flex.trade_history_query_ids, period, resolved_today
         )
     else:
         start_date, end_date = resolve_period(start, end, resolved_today)
         _, query_id, coverage_note = select_flex_window(
-            cfg.flex.query_ids, start_date, resolved_today
+            cfg.flex.trade_history_query_ids, start_date, resolved_today
         )
     try:
         xml_text = fetcher(token, query_id)

@@ -24,7 +24,7 @@ def test_resolve_flex_token_reads_config(tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text(
         "data:\n  base_currency: USD\nflex:\n  token: config-token\n"
-        "  query_ids:\n    7: q7\n",
+        "  trade_history_query_ids:\n    7: q7\n",
         encoding="utf-8",
     )
     assert trade_history.resolve_flex_token(load_config(config)) == "config-token"
@@ -33,7 +33,7 @@ def test_resolve_flex_token_reads_config(tmp_path):
 def test_resolve_flex_token_missing_is_actionable(tmp_path):
     """A missing token points the operator at configure_flex.py."""
     config = tmp_path / "config.yaml"
-    config.write_text("flex:\n  query_ids:\n    7: q7\n", encoding="utf-8")
+    config.write_text("flex:\n  trade_history_query_ids:\n    7: q7\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Flex token"):
         trade_history.resolve_flex_token(load_config(config))
 
@@ -141,7 +141,7 @@ def test_orchestration_uses_injected_flex_fetcher_and_default_period(tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text(
         "data:\n  base_currency: USD\nflex:\n  token: test-token\n"
-        "  query_ids:\n    7: test-query\n",
+        "  trade_history_query_ids:\n    7: test-query\n",
         encoding="utf-8",
     )
     calls = []
@@ -170,7 +170,7 @@ def test_orchestration_selects_window_query_id_and_clips(tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text(
         "data:\n  base_currency: USD\nflex:\n  token: t\n"
-        "  query_ids:\n    7: q7\n    30: q30\n",
+        "  trade_history_query_ids:\n    7: q7\n    30: q30\n",
         encoding="utf-8",
     )
     calls = []
@@ -192,7 +192,7 @@ def test_orchestration_flags_coverage_gap(tmp_path):
     xml = (Path(__file__).parent / "fixtures" / "flex_trade_history_sample.xml").read_text()
     config = tmp_path / "config.yaml"
     config.write_text(
-        "data:\n  base_currency: USD\nflex:\n  token: t\n  query_ids:\n    7: q7\n",
+        "data:\n  base_currency: USD\nflex:\n  token: t\n  trade_history_query_ids:\n    7: q7\n",
         encoding="utf-8",
     )
     out = trade_history.trade_history(
@@ -269,7 +269,7 @@ def test_orchestration_redacts_request_exception_secrets(tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text(
         f"data:\n  base_currency: USD\nflex:\n  token: {token}\n"
-        f"  query_ids:\n    7: {query_id}\n",
+        f"  trade_history_query_ids:\n    7: {query_id}\n",
         encoding="utf-8",
     )
     url = f"https://example/?t={token}&q={query_id}&body=secret-body"
@@ -303,7 +303,7 @@ def test_orchestration_preserves_sanitized_ibkr_error(tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text(
         f"data:\n  base_currency: USD\nflex:\n  token: {token}\n"
-        f"  query_ids:\n    7: {query_id}\n",
+        f"  trade_history_query_ids:\n    7: {query_id}\n",
         encoding="utf-8",
     )
 
@@ -324,7 +324,7 @@ def test_orchestration_redacts_parse_error_from_flex_fetcher(tmp_path):
     """Malformed Flex handshake XML is mapped without exposing parser details."""
     config = tmp_path / "config.yaml"
     config.write_text(
-        "data:\n  base_currency: USD\nflex:\n  token: x\n  query_ids:\n    7: y\n",
+        "data:\n  base_currency: USD\nflex:\n  token: x\n  trade_history_query_ids:\n    7: y\n",
         encoding="utf-8",
     )
 
@@ -349,7 +349,7 @@ def test_orchestration_redacts_value_error_from_flex_fetcher(tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text(
         f"data:\n  base_currency: USD\nflex:\n  token: {token}\n"
-        f"  query_ids:\n    7: {query_id}\n",
+        f"  trade_history_query_ids:\n    7: {query_id}\n",
         encoding="utf-8",
     )
     url = f"https://example.test/?t={token}&q={query_id}&body=secret-body"
@@ -380,7 +380,7 @@ def test_orchestration_preserves_actionable_parser_value_error(tmp_path):
     """Required Flex fields still identify the query setting that must be fixed."""
     config = tmp_path / "config.yaml"
     config.write_text(
-        "data:\n  base_currency: USD\nflex:\n  token: x\n  query_ids:\n    7: y\n",
+        "data:\n  base_currency: USD\nflex:\n  token: x\n  trade_history_query_ids:\n    7: y\n",
         encoding="utf-8",
     )
 
@@ -397,7 +397,7 @@ def test_orchestration_rejects_invalid_flex_xml_without_parser_details(tmp_path)
     """Malformed Flex output receives a safe, actionable public error."""
     config = tmp_path / "config.yaml"
     config.write_text(
-        "data:\n  base_currency: USD\nflex:\n  token: x\n  query_ids:\n    7: y\n",
+        "data:\n  base_currency: USD\nflex:\n  token: x\n  trade_history_query_ids:\n    7: y\n",
         encoding="utf-8",
     )
 
@@ -434,7 +434,7 @@ def test_main_redacts_request_exception_secrets(monkeypatch, capsys, tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text(
         f"data:\n  base_currency: USD\nflex:\n  token: {token}\n"
-        f"  query_ids:\n    7: {query_id}\n",
+        f"  trade_history_query_ids:\n    7: {query_id}\n",
         encoding="utf-8",
     )
 
@@ -554,7 +554,7 @@ def test_orchestration_period_fetches_and_clips(tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text(
         "data:\n  base_currency: USD\nflex:\n  token: t\n"
-        "  query_ids:\n    7: q7\n    mtd: qm\n",
+        "  trade_history_query_ids:\n    7: q7\n    mtd: qm\n",
         encoding="utf-8",
     )
     calls = []
@@ -577,7 +577,7 @@ def test_orchestration_period_rejects_explicit_dates(tmp_path):
     """--period cannot be combined with explicit start/end dates."""
     config = tmp_path / "config.yaml"
     config.write_text(
-        "data:\n  base_currency: USD\nflex:\n  token: t\n  query_ids:\n    mtd: qm\n",
+        "data:\n  base_currency: USD\nflex:\n  token: t\n  trade_history_query_ids:\n    mtd: qm\n",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="cannot be combined"):
@@ -594,7 +594,7 @@ def test_orchestration_period_redacts_fetch_failure(tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text(
         f"data:\n  base_currency: USD\nflex:\n  token: {token}\n"
-        f"  query_ids:\n    ytd: {query_id}\n",
+        f"  trade_history_query_ids:\n    ytd: {query_id}\n",
         encoding="utf-8",
     )
 
