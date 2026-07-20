@@ -38,34 +38,50 @@ def test_flex_config_defaults_to_empty_credentials():
     """Configs without Flex settings expose empty workspace-local credentials."""
     cfg = load_config(FIX / "config_minimal.yaml")
     assert cfg.flex.token is None
-    assert cfg.flex.query_ids == {}
+    assert cfg.flex.trade_history_query_ids == {}
+    assert cfg.flex.dividend_query_ids == {}
 
 
-def test_flex_query_ids_parsed_as_string_keyed_map(tmp_path):
-    """Window keys load as strings; YAML integer keys coerce to digit strings."""
+def test_flex_query_ids_parsed_as_string_keyed_maps(tmp_path):
+    """Window keys load as strings on both maps; integer keys coerce to digits."""
     path = tmp_path / "config.yaml"
     path.write_text(
-        "flex:\n  token: t\n  query_ids:\n    7: q7\n    30: q30\n"
-        "    mtd: qm\n    ytd: qy\n",
+        "flex:\n  token: t\n"
+        "  trade_history_query_ids:\n    7: q7\n    mtd: qm\n"
+        "  dividend_query_ids:\n    365: q365\n    ytd: qy\n",
         encoding="utf-8",
     )
     cfg = load_config(path)
-    assert cfg.flex.query_ids == {"7": "q7", "30": "q30", "mtd": "qm", "ytd": "qy"}
+    assert cfg.flex.trade_history_query_ids == {"7": "q7", "mtd": "qm"}
+    assert cfg.flex.dividend_query_ids == {"365": "q365", "ytd": "qy"}
+
+
+def test_stale_query_ids_key_is_ignored(tmp_path):
+    """The removed shared key no longer populates either map (hard cutover)."""
+    path = tmp_path / "config.yaml"
+    path.write_text("flex:\n  token: t\n  query_ids:\n    7: q7\n", encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.flex.trade_history_query_ids == {}
+    assert cfg.flex.dividend_query_ids == {}
 
 
 def test_flex_query_ids_reject_unknown_string_key(tmp_path):
-    """A non-period, non-numeric key is a configuration error, not a silent typo."""
+    """A non-period, non-numeric key is a configuration error on either map."""
     path = tmp_path / "config.yaml"
-    path.write_text("flex:\n  query_ids:\n    foo: x\n", encoding="utf-8")
+    path.write_text(
+        "flex:\n  dividend_query_ids:\n    foo: x\n", encoding="utf-8"
+    )
     with pytest.raises(ValueError, match="invalid Flex window key"):
         load_config(path)
 
 
 @pytest.mark.parametrize("bad", ["0", "-3"])
 def test_flex_query_ids_reject_nonpositive_day_key(tmp_path, bad):
-    """Numeric day keys must be strictly positive."""
+    """Numeric day keys must be strictly positive on either map."""
     path = tmp_path / "config.yaml"
-    path.write_text(f"flex:\n  query_ids:\n    '{bad}': x\n", encoding="utf-8")
+    path.write_text(
+        f"flex:\n  trade_history_query_ids:\n    '{bad}': x\n", encoding="utf-8"
+    )
     with pytest.raises(ValueError, match="invalid Flex window key"):
         load_config(path)
 

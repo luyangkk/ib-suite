@@ -30,16 +30,17 @@ class StorageCfg(BaseModel):
 
 
 class FlexCfg(BaseModel):
-    """Workspace-local IBKR Flex credentials for the trade-history skill."""
+    """Workspace-local IBKR Flex credentials, split per consuming skill."""
 
     # YAML integer window keys (e.g. `7:`) load as ints; coerce them to the
     # digit strings the model and validator expect.
     model_config = ConfigDict(coerce_numbers_to_str=True)
 
     token: str | None = None
-    query_ids: dict[str, str] = Field(default_factory=dict)
+    trade_history_query_ids: dict[str, str] = Field(default_factory=dict)
+    dividend_query_ids: dict[str, str] = Field(default_factory=dict)
 
-    @field_validator("query_ids")
+    @field_validator("trade_history_query_ids", "dividend_query_ids")
     @classmethod
     def _validate_window_keys(cls, value: dict[str, str]) -> dict[str, str]:
         """Keys are positive-integer day counts or the periods 'mtd'/'ytd'."""
