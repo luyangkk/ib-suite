@@ -16,7 +16,10 @@ cancel orders; do not start IB Gateway; do not write trade data to the lake.
 
 ## Prerequisites
 
-Build one Flex Query per lookback window you need in IBKR. The field
+Build one Flex Query per lookback window you need in IBKR. For the complete
+Client Portal walkthrough — creating the Activity Flex Query, selecting every
+section and field, creating coverage windows, and registering credentials —
+follow the standalone guide at `{baseDir}/flex-query-setup.md`. The field
 requirements are unchanged: every query's `Trades` section must include
 `dateTime`, `tradeID`, `symbol`, `buySell`, `quantity`, `tradePrice`,
 `ibCommission`, `currency`, `ibCommissionCurrency`, `multiplier`, `orderType`,
@@ -24,8 +27,8 @@ requirements are unchanged: every query's `Trades` section must include
 query's history window must cover the days it is registered for.
 
 Set `data.base_currency` in `.ib-suite/config.yaml`. Credentials come only from
-`flex.token` and the `flex.query_ids` map (days -> Query ID) in that local
-config; there is no environment-variable fallback. Before running
+`flex.token` and the `flex.trade_history_query_ids` map (days -> Query ID) in
+that local config; there is no environment-variable fallback. Before running
 `/ib-trade-history`, check those fields without exposing any value. To register
 a window, ask for the matching Query ID and ask for the Flex token only when it
 is not already configured. Invoke the configurator with `--token-stdin` through
@@ -34,6 +37,7 @@ the execution tool (repeat `--window` for each window you register):
 ```bash
 {baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \
   --config .ib-suite/config.yaml --token-stdin \
+  --target trade_history \
   --window '7=<query-id>'
 ```
 
@@ -49,6 +53,7 @@ count:
 ```bash
 {baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \
   --config .ib-suite/config.yaml \
+  --target trade_history \
   --window 'mtd=<query-id>' --window 'ytd=<query-id>'
 ```
 

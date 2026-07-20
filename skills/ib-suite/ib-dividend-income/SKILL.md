@@ -60,8 +60,8 @@ financial presentation, link the standalone guide at
 `{baseDir}/flex-query-setup.md`, and show only the returned `missing` schema
 names. Ask for one item at a time, and only when it is needed:
 
-- If `flex.query_ids` is missing, ask which numeric window the user wants to
-  register, then ask for that saved Activity Flex Query's Query ID.
+- If `flex.dividend_query_ids` is missing, ask which numeric window the user
+  wants to register, then ask for that saved Activity Flex Query's Query ID.
 - For `coverage_required`, use the numeric window named in `missing` and ask for
   its Query ID; do not ask the user to choose a different key silently.
 - If `flex.token` is missing, ask for the Flex Web Service token after any
@@ -69,18 +69,23 @@ names. Ask for one item at a time, and only when it is needed:
   item again.
 
 Use the shared configurator. Pass a token through stdin with `--token-stdin`,
-never as `--token` and never interpolated into the command line:
+never as `--token` and never interpolated into the command line. Use
+`--target dividend` so the window lands in `flex.dividend_query_ids`; the
+dividend target needs a query carrying the six dividend sections (the full
+7-section query also works):
 
 ```bash
 {baseDir}/../.venv/bin/python {baseDir}/../ib-trade-history/scripts/configure_flex.py \
   --config .ib-suite/config.yaml \
   --token-stdin \
+  --target dividend \
   --window '365=<query-id>'
 ```
 
 When the token is already configured, omit `--token-stdin` and register only
-the new `--window`. If the configurator refuses because a token or window key
-already exists, ask for explicit confirmation to replace that exact item.
+the new `--window` (still passing `--target dividend`). If the configurator
+refuses because a token or window key already exists, ask for explicit
+confirmation to replace that exact item.
 Append `--force` only after the user confirms; never treat an earlier general
 setup request as overwrite approval. Then rerun `/ib-dividend-income` and report
 the actual remote result. A successful local save validates configuration

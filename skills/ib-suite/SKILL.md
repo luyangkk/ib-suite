@@ -45,9 +45,10 @@ onboarding; the sub-skills stay gated until `config.yaml` is present.
    It refuses to overwrite an existing config unless you add `--force`.
 5. **Report back:** the config path and the resulting mode/port. Remind the
    user to start IB Gateway with **Read-Only API** enabled before `/ib-sync`,
-   and that `ib-trade-history` and `ib-dividend-income` share one Flex token and
-   per-window Query ID map in ignored local config (`flex.token` /
-   `flex.query_ids`); never echo either credential.
+   and that `ib-trade-history` and `ib-dividend-income` share one Flex token but
+   keep separate per-window Query ID maps in ignored local config (`flex.token`
+   with `flex.trade_history_query_ids` / `flex.dividend_query_ids`); never echo
+   either credential.
 6. Proceed to §2 and run `/ib-sync` → `/ib-analyze`.
 
 Runtime config and data stay workspace-local under `<workspace>/.ib-suite/`
@@ -202,7 +203,8 @@ output paths) to stdout and return non-zero on failure:
 
 **As a library.** `import ib_common` (installed editable) for config/schema/
 storage/metrics/charts. `ib-trade-history` and `ib-dividend-income` share the
-Flex token and per-window Query IDs (`flex.token` / `flex.query_ids`) in ignored
+Flex token but keep separate per-window Query ID maps (`flex.token` with
+`flex.trade_history_query_ids` / `flex.dividend_query_ids`) in ignored
 local config. The dividend skill requires numeric windows and its standalone
 field/window guide is
 [ib-dividend-income/flex-query-setup.md]({baseDir}/ib-dividend-income/flex-query-setup.md).

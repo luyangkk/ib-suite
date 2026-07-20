@@ -12,7 +12,9 @@ storage:
   root: .ib-suite/data   # keep runtime data out of the skill dir (workspace-local)
 flex:
   token: null       # workspace-local secret; never commit a real value
-  query_ids: {}     # keys: day count or 'mtd'/'ytd' -> Flex Query ID, e.g. {"7": "1575544", ytd: "1590003"}
+  # keys: day count or 'mtd'/'ytd' -> Flex Query ID; quote values to preserve leading zeros
+  trade_history_query_ids: {}   # queries for /ib-trade-history (Trades section)
+  dividend_query_ids: {}        # queries for /ib-dividend-income (6 dividend sections)
 options:
   # false (default): skip all option market-data requests — no Greeks/IV, but
   # zero snapshot-fee risk. Position, price, market value and P&L still work
