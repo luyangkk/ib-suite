@@ -255,6 +255,7 @@ def test_skill_guides_window_registration_and_force_replacement():
     register = (
         "{baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \\\n"
         "  --config .ib-suite/config.yaml --token-stdin \\\n"
+        "  --target trade_history \\\n"
         "  --window '7=<query-id>'"
     )
     assert register in skill

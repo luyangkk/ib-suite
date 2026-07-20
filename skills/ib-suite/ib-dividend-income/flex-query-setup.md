@@ -104,12 +104,12 @@ sections and formatting:
 
 | Config key | Client Portal Period | Purpose |
 |---|---|---|
-| `7` | Last N Calendar Days: 7 | shared trade-history short requests |
-| `30` | Last N Calendar Days: 30 | shared trade-history month-scale requests |
-| `90` | Last N Calendar Days: 90 | shared trade-history quarter-scale requests |
+| `7` | Last N Calendar Days: 7 | short-range dividend requests |
+| `30` | Last N Calendar Days: 30 | month-scale dividend requests |
+| `90` | Last N Calendar Days: 90 | quarter-scale dividend requests |
 | `365` | Last 365 Calendar Days (or Last N Calendar Days: 365) | annual-history estimate and most dividend requests |
 
-The `7/30/90` profiles primarily serve shared trade history. Dividend income
+The `7/30/90` profiles serve short-range dividend requests. Dividend income
 generally requires a `365` profile because its annual estimate needs up to 365
 days of trailing history capped at today. The dividend command chooses the
 smallest configured **numeric** window that covers both the requested dates and
@@ -119,9 +119,8 @@ available. Do not label a shorter query as `365` or claim future requested days
 make trailing history complete.
 
 Optional Month to Date and Year to Date queries may be registered as `mtd` and
-`ytd` for the shared trade-history configuration. The current dividend command
-uses numeric keys only, so `mtd` or `ytd` alone does not satisfy dividend
-coverage.
+`ytd` under the trade-history target. The current dividend command uses numeric
+keys only, so `mtd` or `ytd` alone does not satisfy dividend coverage.
 
 ## 4. Retrieve each Query ID and the Flex Web Service token
 

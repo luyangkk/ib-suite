@@ -84,8 +84,8 @@ dividend target needs a query carrying the six dividend sections (the full
 
 When the token is already configured, omit `--token-stdin` and register only
 the new `--window` (still passing `--target dividend`). If the configurator
-refuses because a token or window key already exists, ask for explicit
-confirmation to replace that exact item.
+refuses because a token or window key already exists, ask for
+explicit confirmation to replace that exact item.
 Append `--force` only after the user confirms; never treat an earlier general
 setup request as overwrite approval. Then rerun `/ib-dividend-income` and report
 the actual remote result. A successful local save validates configuration

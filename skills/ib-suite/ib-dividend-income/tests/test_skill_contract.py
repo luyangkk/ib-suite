@@ -175,15 +175,15 @@ def test_setup_guide_covers_safe_registration_and_remote_validation() -> None:
         assert phrase in text
 
 
-def test_setup_guide_explains_shared_query_compatibility_and_coverage() -> None:
-    """Window guidance separates shared trade use from dividend coverage needs."""
+def test_setup_guide_explains_independent_registration_and_coverage() -> None:
+    """Window guidance separates the dividend map from numeric coverage needs."""
     text = " ".join(GUIDE_PATH.read_text(encoding="utf-8").split()).lower()
 
     assert "six dividend sections" in text
     assert "trades" in text
-    assert "trade-history compatibility" in text
+    assert "register independent query ids" in text
     assert "7/30/90" in text
-    assert "primarily serve shared trade history" in text
+    assert "short-range dividend requests" in text
     assert "dividend income generally requires a `365`" in text
     assert "older historical requested ranges" in text
     assert "coverage_required" in text
