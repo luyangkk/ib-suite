@@ -35,9 +35,9 @@ def _write_config(
 ) -> Path:
     """Write a focused local configuration and return its path."""
     flex: dict[str, Any] = {
-        "query_ids": (
+        "dividend_query_ids": (
             {"365": "QUERY-SECRET-365"} if query_ids is None else query_ids
-        )
+        ),
     }
     if token is not None:
         flex["token"] = token
@@ -155,7 +155,7 @@ def test_setup_empty_query_map_returns_stable_guide(tmp_path: Path) -> None:
 
     assert result == {
         "status": "setup_required",
-        "missing": ["flex.query_ids"],
+        "missing": ["flex.dividend_query_ids"],
         "guide": "flex-query-setup.md",
         "run_id": "empty-map-run",
     }
@@ -174,7 +174,7 @@ def test_coverage_insufficient_window_returns_required_state(tmp_path: Path) -> 
 
     assert result == {
         "status": "coverage_required",
-        "missing": ["flex.query_ids.365"],
+        "missing": ["flex.dividend_query_ids.365"],
         "guide": "flex-query-setup.md",
         "run_id": "coverage-run",
     }
@@ -224,7 +224,7 @@ def test_setup_blank_numeric_query_id_does_not_fetch(tmp_path: Path) -> None:
 
     assert result == {
         "status": "setup_required",
-        "missing": ["flex.query_ids"],
+        "missing": ["flex.dividend_query_ids"],
         "guide": "flex-query-setup.md",
         "run_id": "blank-query-run",
     }
@@ -429,7 +429,7 @@ def test_cli_malformed_query_map_is_structured_and_never_leaks(
     payload = json.loads(completed.stdout)
     assert completed.returncode != 0
     assert payload["status"] == "setup_required"
-    assert payload["missing"] == ["flex.query_ids"]
+    assert payload["missing"] == ["flex.dividend_query_ids"]
     assert payload["guide"] == "flex-query-setup.md"
     assert payload["message"] == "Flex configuration is invalid"
     assert re.fullmatch(r"[0-9a-f]{32}", payload["run_id"])

@@ -63,8 +63,10 @@ def _validation_missing(exc: ValidationError) -> list[str]:
             include_input=False,
         )
     ]
-    if any(location[:2] == ("flex", "query_ids") for location in locations):
-        return ["flex.query_ids"]
+    if any(
+        location[:2] == ("flex", "dividend_query_ids") for location in locations
+    ):
+        return ["flex.dividend_query_ids"]
     return ["config"]
 
 
@@ -138,13 +140,15 @@ def dividend_income(
         _log(logging.INFO, "setup_required", run_id=resolved_run_id)
         return _state("setup_required", ["flex.token"], resolved_run_id)
 
-    if any(not query_id.strip() for query_id in cfg.flex.query_ids.values()):
+    if any(
+        not query_id.strip() for query_id in cfg.flex.dividend_query_ids.values()
+    ):
         _log(logging.INFO, "setup_required", run_id=resolved_run_id)
-        return _state("setup_required", ["flex.query_ids"], resolved_run_id)
+        return _state("setup_required", ["flex.dividend_query_ids"], resolved_run_id)
 
-    if not cfg.flex.query_ids:
+    if not cfg.flex.dividend_query_ids:
         _log(logging.INFO, "setup_required", run_id=resolved_run_id)
-        return _state("setup_required", ["flex.query_ids"], resolved_run_id)
+        return _state("setup_required", ["flex.dividend_query_ids"], resolved_run_id)
 
     start_date = parse_iso_date(start)
     end_date = parse_iso_date(end)
@@ -159,7 +163,7 @@ def dividend_income(
     required_days = (resolved_today - required_start).days + 1
     try:
         window, query_id, _ = select_flex_window(
-            cfg.flex.query_ids,
+            cfg.flex.dividend_query_ids,
             required_start,
             resolved_today,
             allow_partial=False,
@@ -173,7 +177,7 @@ def dividend_income(
         )
         return _state(
             "coverage_required",
-            [f"flex.query_ids.{required_days}"],
+            [f"flex.dividend_query_ids.{required_days}"],
             resolved_run_id,
         )
 
