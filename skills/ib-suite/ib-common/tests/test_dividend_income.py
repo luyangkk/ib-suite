@@ -42,7 +42,6 @@ def _cash(
         amount=amount,
         transaction_type=transaction_type,
         trade_id=trade_id,
-        withholding_871m=None,
         code=code,
     )
 
@@ -299,7 +298,9 @@ def test_reconcile_prefers_exact_pay_date_then_unique_three_day_tolerance() -> N
     assert {row.symbol: row.gross for row in report.realized_dividends} == {
         "EXACT": 25.0,
         "NEAR": 30.0,
-        "FAR": None,
+        # The FAR accrual is beyond the pay-date tolerance, so no accrual is
+        # matched; the confirmed cash amount is still credited as gross.
+        "FAR": 25.0,
     }
 
 
@@ -354,10 +355,60 @@ def test_reconcile_unmatched_gross_cash_subtracts_unique_withholding_from_net() 
     )
 
     realized = report.realized_dividends[0]
-    assert realized.gross is None
+    assert realized.gross == 25.0
     assert realized.withholding_tax == 3.75
     assert realized.net == 21.25
     assert realized.base_net == 21.25
+
+
+def test_unmatched_dividend_cash_falls_back_to_cash_amount_for_gross() -> None:
+    """Confirmed dividend cash without any accrual still reports gross from cash."""
+    dataset = _dataset(cash=[_cash(amount=1.40)])
+
+    report = build_dividend_income_report(
+        dataset, date(2026, 7, 1), date(2026, 7, 31)
+    )
+
+    realized = report.realized_dividends[0]
+    assert realized.gross == 1.40
+    assert realized.base_gross == 1.40
+    assert realized.net == 1.40
+
+
+def test_split_dividend_and_payment_in_lieu_each_report_own_gross() -> None:
+    """A dividend split into two cash rows against a zeroed accrual reports both."""
+    posting = _accrual(gross=312.98, net=281.68, tax=-31.30)
+    payout_reversal = posting.model_copy(
+        update={
+            "accrual_date": posting.pay_date,
+            "quantity": -100.0,
+            "tax": 31.30,
+            "gross_rate": 0.6359,
+            "gross_amount": -312.98,
+            "net_amount": -281.68,
+            "code": "RE",
+            "report_date": posting.pay_date,
+        }
+    )
+    dataset = _dataset(
+        cash=[
+            _cash(amount=195.03, transaction_type="Dividends"),
+            _cash(amount=117.94, transaction_type="Payment In Lieu Of Dividends"),
+        ],
+        accruals=[posting, payout_reversal],
+        positions=[_position()],
+    )
+
+    report = build_dividend_income_report(
+        dataset,
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        history_start_date=date(2025, 8, 1),
+    )
+
+    grosses = sorted(line.gross for line in report.realized_dividends)
+    assert grosses == [117.94, 195.03]
+    assert report.summary.realized.gross == pytest.approx(312.97)
 
 
 def test_reconcile_unmatched_cash_keeps_net_null_for_ambiguous_withholding() -> None:
@@ -462,6 +513,82 @@ def test_reconcile_cash_confirmed_po_re_payout_retains_economic_accrual() -> Non
     assert report.summary.realized.gross == 25.0
     assert report.annual_estimate.holdings[0].trailing_gross_rate == 0.25
     assert report.annual_estimate.estimated_base_gross == 25.0
+
+
+def test_reconcile_cash_confirmed_po_re_with_unsigned_rate_retains_gross() -> None:
+    """Real IBKR reversals keep a positive gross_rate; cash must still confirm gross."""
+    posting = _accrual()
+    # IBKR emits the reversal with a NEGATED amount but an UNCHANGED per-share rate.
+    payout_reversal = posting.model_copy(
+        update={
+            "accrual_date": posting.pay_date,
+            "quantity": -100.0,
+            "tax": 3.75,
+            "fee": 0.0,
+            "gross_rate": 0.25,
+            "gross_amount": -25.0,
+            "net_amount": -21.25,
+            "code": "RE",
+            "report_date": posting.pay_date,
+        }
+    )
+    dataset = _dataset(
+        cash=[
+            _cash(),
+            _cash(amount=-3.75, transaction_type="Withholding Tax"),
+        ],
+        accruals=[posting, payout_reversal],
+        positions=[_position()],
+    )
+
+    report = build_dividend_income_report(
+        dataset,
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        history_start_date=date(2025, 8, 1),
+    )
+
+    realized = report.realized_dividends[0]
+    assert realized.gross == 25.0
+    assert report.summary.realized.gross == 25.0
+
+
+def test_reconcile_cash_confirmed_po_re_with_subcent_residue_retains_gross() -> None:
+    """A one-cent rounding residue in a cancelled pair must not fake a live event."""
+    posting = _accrual(net=224.69, gross=249.65, tax=-24.96, gross_rate=0.6089)
+    payout_reversal = posting.model_copy(
+        update={
+            "accrual_date": posting.pay_date,
+            "quantity": -100.0,
+            "tax": 24.96,
+            "fee": 0.0,
+            "gross_rate": 0.6089,
+            "gross_amount": -249.65,
+            # IBKR leaves a sub-cent residue on the reversal net.
+            "net_amount": -224.68,
+            "code": "RE",
+            "report_date": posting.pay_date,
+        }
+    )
+    dataset = _dataset(
+        cash=[
+            _cash(amount=249.65),
+            _cash(amount=-24.96, transaction_type="Withholding Tax"),
+        ],
+        accruals=[posting, payout_reversal],
+        positions=[_position()],
+    )
+
+    report = build_dividend_income_report(
+        dataset,
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        history_start_date=date(2025, 8, 1),
+    )
+
+    realized = report.realized_dividends[0]
+    assert realized.gross == 249.65
+    assert report.summary.realized.gross == 249.65
 
 
 def test_reconcile_po_re_without_confirmed_cash_remains_cancelled() -> None:
@@ -609,12 +736,15 @@ def test_zeroed_lifecycle_cash_amount_disagreement_keeps_cash_only_facts() -> No
     )
 
     realized = report.realized_dividends[0]
-    assert realized.gross is None
+    # The accrual gross disagreed with the confirmed cash, so accrual-derived
+    # details (quantity, withholding, fee) are dropped; gross falls back to the
+    # cash that actually posted.
+    assert realized.gross == 30.0
     assert realized.quantity is None
     assert realized.withholding_tax is None
     assert realized.fee is None
     assert realized.net == 30.0
-    assert report.summary.realized.gross is None
+    assert report.summary.realized.gross == 30.0
     assert report.annual_estimate.holdings[0].trailing_gross_rate == 0.0
     assert report.annual_estimate.estimated_base_gross == 0.0
     assert any(

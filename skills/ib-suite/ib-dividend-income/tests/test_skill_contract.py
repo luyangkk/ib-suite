@@ -106,7 +106,7 @@ def test_setup_guide_lists_every_required_flex_section_and_field() -> None:
         "Cash Transactions": (
             "accountId", "currency", "assetCategory", "fxRateToBase", "symbol",
             "description", "conid", "underlyingConid", "underlyingSymbol",
-            "dateTime", "amount", "type", "tradeID", "withholdingTax", "code",
+            "dateTime", "amount", "type", "tradeID", "code",
         ),
         "Change in Dividend Accruals": (
             "accountId", "currency", "assetCategory", "fxRateToBase", "symbol",
@@ -121,7 +121,7 @@ def test_setup_guide_lists_every_required_flex_section_and_field() -> None:
         ),
         "Open Positions": (
             "accountId", "currency", "assetCategory", "fxRateToBase", "symbol",
-            "conid", "reportDate", "quantity", "multiplier", "markPrice",
+            "conid", "reportDate", "position", "multiplier", "markPrice",
             "positionValue", "side", "levelOfDetail",
         ),
         "Financial Instrument Information": (

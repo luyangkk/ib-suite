@@ -8,12 +8,12 @@
                          fxRateToBase="1.0" symbol="AAPL" description="AAPL CASH DIVIDEND"
                          conid="265598" underlyingConid="" underlyingSymbol=""
                          dateTime="2026-05-15;08:30:00" amount="25.00" type="Dividends"
-                         tradeID="" withholdingTax="0.00" code="Po"/>
+                         tradeID="" code="Po"/>
         <CashTransaction accountId="U0000000" currency="USD" assetCategory="STK"
                          fxRateToBase="1.0" symbol="AAPL" description="AAPL WITHHOLDING TAX"
                          conid="265598" underlyingConid="" underlyingSymbol=""
                          dateTime="20260515;083000" amount="-3.75" type="Withholding Tax"
-                         tradeID="" withholdingTax="0.00" code="Po"/>
+                         tradeID="" code="Po"/>
       </CashTransactions>
       <ChangeInDividendAccruals>
         <ChangeInDividendAccrual accountId="U0000000" currency="USD" assetCategory="STK"
@@ -39,22 +39,22 @@
       <OpenPositions>
         <OpenPosition accountId="U0000000" currency="USD" assetCategory="STK"
                       fxRateToBase="1.0" symbol="AAPL" conid="265598"
-                      reportDate="2026-07-31" quantity="100" multiplier="1"
+                      reportDate="2026-07-31" position="100" multiplier="1"
                       markPrice="210.00" positionValue="21000.00" side="Long"
                       levelOfDetail="Summary"/>
         <OpenPosition accountId="U0000000" currency="SGD" assetCategory="FUND"
                       fxRateToBase="0.74" symbol="SGFUND" conid="900001"
-                      reportDate="20260731" quantity="200" multiplier="1"
+                      reportDate="20260731" position="200" multiplier="1"
                       markPrice="12.00" positionValue="2400.00" side="Long"
                       levelOfDetail="Summary"/>
         <OpenPosition accountId="U0000000" currency="USD" assetCategory="STK"
                       fxRateToBase="1.0" symbol="SHORT" conid="900002"
-                      reportDate="2026-07-31" quantity="-10" multiplier="1"
+                      reportDate="2026-07-31" position="-10" multiplier="1"
                       markPrice="50.00" positionValue="-500.00" side="Short"
                       levelOfDetail="Summary"/>
         <OpenPosition accountId="U0000000" currency="USD" assetCategory="OPT"
                       fxRateToBase="1.0" symbol="AAPL 260918C00250000" conid="900003"
-                      reportDate="2026-07-31" quantity="1" multiplier="100"
+                      reportDate="2026-07-31" position="1" multiplier="100"
                       markPrice="2.00" positionValue="200.00" side="Long"
                       levelOfDetail="Summary"/>
       </OpenPositions>

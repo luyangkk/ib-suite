@@ -103,6 +103,37 @@ def test_blank_optional_dividend_accrual_dates_become_none(
     assert getattr(dataset.dividend_accruals[0], model_field) is None
 
 
+@pytest.mark.parametrize(
+    ("attribute_name", "model_field"),
+    [("assetCategory", "asset_class"), ("symbol", "symbol")],
+)
+def test_blank_cash_security_fields_are_tolerated_for_withholding_rows(
+    attribute_name: str, model_field: str
+) -> None:
+    """IBKR emits blank assetCategory/symbol on withholding-tax cash rows."""
+    xml_text = DIVIDEND_FIX.read_text(encoding="utf-8")
+    xml_text = _with_blank_attribute(xml_text, "CashTransaction", attribute_name)
+
+    dataset = flex.parse_flex_dividend_dataset(xml_text)
+
+    assert getattr(dataset.cash_transactions[0], model_field) == ""
+
+
+def test_date_only_cash_datetime_is_parsed_as_midnight_utc() -> None:
+    """IBKR reports date-only dateTime on withholding rows; treat it as midnight."""
+    root = ET.fromstring(DIVIDEND_FIX.read_text(encoding="utf-8"))
+    element = root.find(".//CashTransaction")
+    assert element is not None
+    element.set("dateTime", "20260515")
+    xml_text = ET.tostring(root, encoding="unicode")
+
+    dataset = flex.parse_flex_dividend_dataset(xml_text)
+
+    assert dataset.cash_transactions[0].ts.isoformat() == (
+        "2026-05-15T00:00:00+00:00"
+    )
+
+
 def test_parse_flex_dividend_dataset_accepts_legacy_instrument_tags() -> None:
     """Legacy fixture aliases remain compatible with real SecuritiesInfo tags."""
     xml_text = DIVIDEND_FIX.read_text(encoding="utf-8")
@@ -137,7 +168,6 @@ def test_unrelated_cash_transaction_with_blank_security_fields_is_ignored() -> N
                 "amount": "1000",
                 "type": "Deposits/Withdrawals",
                 "tradeID": "",
-                "withholdingTax": "",
                 "code": "",
             },
         ),

@@ -113,9 +113,14 @@ def parse_flex_dividends(xml_text: str) -> list[Dividend]:
 
 
 def _parse_datetime(value: str) -> datetime:
-    """Parse a required Flex execution timestamp as UTC."""
+    """Parse a required Flex timestamp as UTC, tolerating date-only values."""
     normalized = value.strip()
-    for fmt in ("%Y-%m-%d;%H:%M:%S", "%Y%m%d;%H%M%S"):
+    for fmt in (
+        "%Y-%m-%d;%H:%M:%S",
+        "%Y%m%d;%H%M%S",
+        "%Y-%m-%d",
+        "%Y%m%d",
+    ):
         try:
             return datetime.strptime(normalized, fmt).replace(tzinfo=timezone.utc)
         except ValueError:
@@ -144,7 +149,6 @@ _DIVIDEND_SECTION_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
             "amount",
             "type",
             "tradeID",
-            "withholdingTax",
             "code",
         ),
     ),
@@ -201,7 +205,7 @@ _DIVIDEND_SECTION_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
             "symbol",
             "conid",
             "reportDate",
-            "quantity",
+            "position",
             "multiplier",
             "markPrice",
             "positionValue",
@@ -434,13 +438,13 @@ def _parse_cash_transaction(element: ET.Element) -> FlexCashTransaction:
     return FlexCashTransaction(
         account_id=_required_section_value(element, section, "accountId"),
         currency=_required_section_value(element, section, "currency").upper(),
-        asset_class=_required_section_value(
+        asset_class=_present_section_value(
             element, section, "assetCategory"
         ).upper(),
         fx_rate_to_base=_optional_section_float(
             element, section, "fxRateToBase"
         ),
-        symbol=_required_section_value(element, section, "symbol"),
+        symbol=_present_section_value(element, section, "symbol"),
         description=_optional_section_text(element, section, "description"),
         conid=_optional_section_text(element, section, "conid"),
         underlying_conid=_optional_section_text(
@@ -453,9 +457,6 @@ def _parse_cash_transaction(element: ET.Element) -> FlexCashTransaction:
         amount=_optional_section_float(element, section, "amount"),
         transaction_type=_required_section_value(element, section, "type"),
         trade_id=_optional_section_text(element, section, "tradeID"),
-        withholding_871m=_optional_section_float(
-            element, section, "withholdingTax"
-        ),
         code=_present_section_value(element, section, "code").upper(),
     )
 
@@ -518,7 +519,7 @@ def _parse_open_position(element: ET.Element) -> FlexOpenPosition:
         symbol=_required_section_value(element, section, "symbol"),
         conid=_optional_section_text(element, section, "conid"),
         report_date=_section_date(element, section, "reportDate"),
-        quantity=_optional_section_float(element, section, "quantity"),
+        quantity=_optional_section_float(element, section, "position"),
         multiplier=_optional_section_float(element, section, "multiplier"),
         mark_price=_optional_section_float(element, section, "markPrice"),
         position_value=_optional_section_float(element, section, "positionValue"),

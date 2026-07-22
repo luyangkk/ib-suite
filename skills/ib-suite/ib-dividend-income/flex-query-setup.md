@@ -51,7 +51,7 @@ Select Account ID (`accountId`), Currency (`currency`), Asset Class
 Description (`description`), Conid (`conid`), Underlying Conid
 (`underlyingConid`), Underlying Symbol (`underlyingSymbol`), Date/Time
 (`dateTime`), Amount (`amount`), Type (`type`), Trade ID (`tradeID`),
-871(m) Withholding (`withholdingTax`), and Code (`code`).
+and Code (`code`).
 
 ### Change in Dividend Accruals
 
@@ -75,7 +75,7 @@ Net Amount (`netAmount`), and Code (`code`).
 Select **Level of Detail: Summary**, not lot detail. Select Account ID
 (`accountId`), Currency (`currency`), Asset Class (`assetCategory`), FX Rate to
 Base (`fxRateToBase`), Symbol (`symbol`), Conid (`conid`), Report Date
-(`reportDate`), Quantity (`quantity`), Multiplier (`multiplier`), Mark Price
+(`reportDate`), Quantity (`position`), Multiplier (`multiplier`), Mark Price
 (`markPrice`), Position Value (`positionValue`), Side (`side`), and Level of
 Detail (`levelOfDetail`). Summary rows prevent lots from being double counted.
 

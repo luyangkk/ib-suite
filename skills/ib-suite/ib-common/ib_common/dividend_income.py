@@ -247,11 +247,10 @@ def _reduce_accrual_lifecycle(
             }
         )
         positive_event = any(
-            value is not None and value > 0
+            value is not None and value >= 0.01
             for value in (
                 combined.gross_amount,
                 combined.net_amount,
-                combined.gross_rate,
             )
         )
         if positive_event:
@@ -775,6 +774,7 @@ def _realized_line(
     country: str,
     cash_withholding: float | None,
     withholding_ambiguous: bool,
+    accrual_ambiguous: bool = False,
 ) -> DividendIncomeLine:
     """Convert confirmed dividend cash and optional accrual facts to one line."""
     if accrual is not None:
@@ -827,17 +827,32 @@ def _realized_line(
             else cash.amount
         )
     )
+    # A confirmed positive dividend cash posting is itself gross income: the
+    # withholding tax arrives on a separate row, so the cash amount is pre-tax.
+    # When the cash could not be tied to any accrual and the match was not
+    # ambiguous (e.g. a payment-in-lieu split whose single accrual was dropped as
+    # a gross-amount discrepancy, or a re-issued amount with no surviving
+    # accrual), the cash itself is the most reliable gross fact. Ambiguous
+    # many-to-one matches stay null so competing cash cannot double-count one
+    # dividend.
+    unmatched_gross = (
+        cash.amount
+        if not accrual_ambiguous
+        and cash.amount is not None
+        and cash.amount > 0
+        else None
+    )
     return DividendIncomeLine(
         symbol=cash.symbol.strip(),
         payment_date=cash.ts.date(),
         status="REALIZED",
-        gross=None,
+        gross=unmatched_gross,
         withholding_tax=cash_withholding,
         fee=None,
         net=unmatched_net,
         currency=cash.currency.upper(),
         fx_rate_to_base=cash.fx_rate_to_base,
-        base_gross=None,
+        base_gross=_converted(unmatched_gross, cash.fx_rate_to_base),
         base_withholding_tax=_converted(cash_withholding, cash.fx_rate_to_base),
         base_fee=None,
         base_net=_converted(unmatched_net, cash.fx_rate_to_base),
@@ -1323,6 +1338,7 @@ def build_dividend_income_report(
                 country=country,
                 cash_withholding=cash_withholding,
                 withholding_ambiguous=withholding_ambiguous,
+                accrual_ambiguous=ambiguous,
             )
         )
         if withholding_ambiguous:

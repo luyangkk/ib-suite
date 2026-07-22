@@ -134,7 +134,6 @@ class FlexCashTransaction(BaseModel):
     amount: float | None
     transaction_type: str
     trade_id: str | None
-    withholding_871m: float | None
     code: str
 
 
