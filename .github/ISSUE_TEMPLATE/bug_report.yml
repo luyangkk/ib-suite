@@ -1,0 +1,47 @@
+name: Bug report
+description: Report a defect in an ib-suite skill or the shared library
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Do not paste tokens, Query IDs, account
+        numbers, or live account data.** Redact everything sensitive first.
+  - type: input
+    id: skill
+    attributes:
+      label: Which skill / command?
+      placeholder: e.g. /ib-dividend-income
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Configure ...
+        2. Run ...
+        3. See error ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: OS, Python version, live vs paper
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I confirm this report contains no tokens, Query IDs, account numbers, or other credentials.
+          required: true
