@@ -113,7 +113,7 @@ skills/ib-suite/                        the single installable OpenClaw unit
     scripts/analyze.py                  /ib-analyze entry: read lake -> run diagnostics -> emit report
     ib_analyst/*.py                     diagnostic dimensions + findings vocabulary + report assembly
     tests/                              analyst tests + fixtures
-docs/superpowers/{plans,specs}/         local-only design docs (gitignored, NOT distributed)
+docs/superpowers/{plans,specs}/         design history (specs + plans), tracked and distributed with the repo
 ```
 
 Do not invent `agents/`, `references/`, `assets/`. Runtime data and the real
@@ -141,8 +141,9 @@ gitignored and created at runtime; the skill directory ships only code and
   venv, asks live-vs-paper once, and calls `init_config.py`. The sub-skills stay
   gated on `config.yaml` until it exists.
 - Domain knowledge and historical decisions live in `docs/superpowers/`
-  (gitignored, local-only). **Read on demand**; do not load them wholesale into
-  context, and do not assume they ship with the skill.
+  (tracked in git as design history). **Read on demand**; do not load them
+  wholesale into context. They ship with the repo but are excluded from the
+  distributable skill unit (see §11).
 
 ## 4. SKILL.md Rules
 
@@ -341,8 +342,9 @@ When distributing / delivering:
   (`SKILL.md` + `scripts/` + `ib-common/` + every sub-skill, with `ib_analyst`
   traveling inside `ib-portfolio-analyst`).
 - Exclude `.venv/`, `__pycache__/`, `.pytest_cache/`, `*.egg-info/`, `data/runs/`,
-  `.ib-suite/`, `docs/superpowers/`, and the real config/snapshots (all covered by
-  `.gitignore`).
+  `.ib-suite/`, and the real config/snapshots (all covered by `.gitignore`).
+  `docs/superpowers/` is tracked as design history and ships with the repo, but
+  is not part of the installable `skills/ib-suite/` skill unit.
 - Confirm every script referenced by a SKILL.md and every depended-on package is
   included; check filename case.
 - Pass §8 tests and the manual checklist before packaging / delivery.
