@@ -44,6 +44,14 @@ you also register it under the trade-history target.
 
 Select Account ID (`accountId`) and Base Currency / Currency (`currency`).
 
+This section is mandatory even though it holds no dividend rows: its `currency`
+is the single source of the report's base currency, which every base-value
+conversion depends on. If the section is missing the command returns
+`query_update_required`; if its `currency` differs across rows the parse fails
+with an inconsistent-currency error. Client Portal can silently drop this
+section when you edit the query, so re-confirm both fields are still checked
+after any change and save again.
+
 ### Cash Transactions
 
 Select Account ID (`accountId`), Currency (`currency`), Asset Class
