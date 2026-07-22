@@ -2,10 +2,11 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
+[![CI](https://github.com/luyangkk/ib-suite/actions/workflows/ci.yml/badge.svg)](https://github.com/luyangkk/ib-suite/actions/workflows/ci.yml)
 [![Agent Skill](https://img.shields.io/badge/format-Agent%20Skill-6f42c1)](#installation)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776ab)](https://www.python.org/)
 [![Read-only](https://img.shields.io/badge/IB%20access-read--only-2ea44f)](#safety--read-only-boundary)
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](#license)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
 A portable **Agent Skill** suite (built on the `SKILL.md` convention) that pulls
 **Interactive Brokers (IBKR)** account data **read-only** and turns it into
@@ -306,10 +307,13 @@ your own use of your brokerage account and for complying with IBKR's terms.
 
 ## Contributing
 
-Issues and PRs are welcome. Before contributing, read [`CLAUDE.md`](CLAUDE.md)
-for the read-only invariant, the `SKILL.md` authoring rules, and the TDD /
-surgical-change conventions. Please run the full test suite and keep secrets and
-runtime data (`.ib-suite/`, real `config.yaml`, live snapshots) out of commits.
+Issues and PRs are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
+dev setup, the read-only invariant, and commit conventions;
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for community expectations; and
+[`SECURITY.md`](SECURITY.md) to report vulnerabilities privately. Run the full
+test suite and keep secrets and runtime data (`.ib-suite/`, real `config.yaml`,
+live snapshots) out of commits. See [`CLAUDE.md`](CLAUDE.md) for the full
+architecture.
 
 ---
 

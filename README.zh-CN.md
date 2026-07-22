@@ -2,10 +2,11 @@
 
 [English](README.md) | **简体中文**
 
+[![CI](https://github.com/luyangkk/ib-suite/actions/workflows/ci.yml/badge.svg)](https://github.com/luyangkk/ib-suite/actions/workflows/ci.yml)
 [![Agent Skill](https://img.shields.io/badge/format-Agent%20Skill-6f42c1)](#安装)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776ab)](https://www.python.org/)
 [![Read-only](https://img.shields.io/badge/IB%20access-read--only-2ea44f)](#安全与只读边界)
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](#许可证)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
 一套可移植的 **Agent Skill** 工具集(基于 `SKILL.md` 约定),以**只读**方式拉取
 **Interactive Brokers(IBKR)** 账户数据,并将其转化为结构化的组合诊断——账户健康、
@@ -289,9 +290,11 @@ Interactive Brokers 与 IBKR 为 Interactive Brokers LLC 的商标,本项目与�
 
 ## 参与贡献
 
-欢迎提 Issue 和 PR。贡献前请先阅读 [`CLAUDE.md`](CLAUDE.md),了解只读不变量、
-`SKILL.md` 编写规则,以及 TDD / 外科手术式改动约定。请运行全量测试,并确保敏感信息与
-运行时数据(`.ib-suite/`、真实 `config.yaml`、实时快照)不进入提交。
+欢迎提 Issue 和 PR。请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md) 了解开发环境、
+只读不变量与提交约定;[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) 了解社区准则;
+以及 [`SECURITY.md`](SECURITY.md) 私下报告安全问题。请运行全量测试,并确保敏感信息与
+运行时数据(`.ib-suite/`、真实 `config.yaml`、实时快照)不进入提交。完整架构见
+[`CLAUDE.md`](CLAUDE.md)。
 
 ---
 
