@@ -1160,7 +1160,9 @@ def test_module_never_imports_order_apis():
 
 
 def test_skill_instructs_two_table_localized_presentation():
-    skill = (SPEC.parent.parent / "SKILL.md").read_text(encoding="utf-8")
+    skill = (
+        SPEC.parent.parent.parent / "references" / "ib-options-overview.md"
+    ).read_text(encoding="utf-8")
 
     detail_anchor = "Start with a position-detail Markdown table"
     moneyness_anchor = "In the second table, group positions by `moneyness`"

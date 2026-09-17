@@ -1,5 +1,9 @@
 # Skill format
 
+> Compatibility note for this repository: `metadata.openclaw` is an OpenClaw
+> extension. `skills/ib-suite/SKILL.md` intentionally omits it so the published
+> package conforms to the portable Agent Skills frontmatter contract.
+
 ## On disk
 
 A skill is a folder.

@@ -5,7 +5,7 @@ This standalone guide configures the saved Activity Flex Queries shared by
 do not start IB Gateway, do not request market data, do not place, modify, or
 cancel orders, and do not persist account data. The only local write is the
 Flex token and Query ID window map in the ignored
-`.ib-suite/config.yaml`; never paste either value into logs, reports, source
+`$WORKSPACE_ROOT/.ib-suite/config.yaml`; never paste either value into logs, reports, source
 files, or version control.
 
 Official IBKR references: [create an Activity Flex Query](https://www.ibkrguides.com/clientportal/performanceandstatements/activityflex.htm),
@@ -151,7 +151,7 @@ shell history, logs, or source control.
 ## 5. Register credentials conversationally
 
 First ensure the ib-suite onboarding flow has created
-`.ib-suite/config.yaml`. In a conversation, collect one item at a time: desired
+`$WORKSPACE_ROOT/.ib-suite/config.yaml`. In a conversation, collect one item at a time: desired
 window, matching Query ID, then the token only if it is absent. Do not ask the
 user to repeat a token that is already configured.
 
@@ -159,13 +159,13 @@ user to repeat a token that is already configured.
 while sharing one Flex token. Pass `--target dividend` so windows land in
 `flex.dividend_query_ids` (the dividend map needs a query carrying the six
 dividend sections); a `Trades`-only query belongs under the trade-history
-target instead.
+target instead. This setup is read-only: do not place, modify, or cancel orders.
 
 For the first token and window, run the configurator with `--token-stdin`:
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/../ib-trade-history/scripts/configure_flex.py \
-  --config .ib-suite/config.yaml \
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-trade-history/scripts/configure_flex.py \
+  --config $WORKSPACE_ROOT/.ib-suite/config.yaml \
   --token-stdin \
   --target dividend \
   --window '365=<query-id>'
@@ -176,8 +176,8 @@ substitute it into the command. The process never echoes it. When a token is
 already stored, add a new window without reading or rewriting that token:
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/../ib-trade-history/scripts/configure_flex.py \
-  --config .ib-suite/config.yaml \
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-trade-history/scripts/configure_flex.py \
+  --config $WORKSPACE_ROOT/.ib-suite/config.yaml \
   --target dividend \
   --window '90=<query-id>'
 ```
@@ -193,8 +193,8 @@ restriction, then—with explicit confirmation to replace the local token—run
 (token-only, so no `--target` is needed):
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/../ib-trade-history/scripts/configure_flex.py \
-  --config .ib-suite/config.yaml \
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-trade-history/scripts/configure_flex.py \
+  --config $WORKSPACE_ROOT/.ib-suite/config.yaml \
   --token-stdin \
   --force
 ```
@@ -202,7 +202,7 @@ restriction, then—with explicit confirmation to replace the local token—run
 ## 6. Validate and troubleshoot
 
 A successful configurator response such as
-`{"config":".ib-suite/config.yaml","ready":true}` proves only that the ignored
+`{"config":"$WORKSPACE_ROOT/.ib-suite/config.yaml","ready":true}` proves only that the ignored
 local file was written atomically and reloads under the local schema. Saving
 local credentials does not prove the remote query is correct. Validate remotely
 by rerunning `/ib-dividend-income` for an explicit date range; a successful

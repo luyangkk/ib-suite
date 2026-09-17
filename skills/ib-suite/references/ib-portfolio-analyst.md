@@ -1,13 +1,3 @@
----
-name: ib-portfolio-analyst
-description: "Read-only IB diagnostics: account health, concentration, P&L attribution, trade review, portfolio risk, pre-trade check — a P0-P3 findings report with charts."
-metadata:
-  openclaw:
-    requires:
-      bins: [python3]
-      config: [config.yaml]
-    os: [darwin, linux]
----
 
 # ib-portfolio-analyst
 
@@ -30,8 +20,8 @@ first-run setup). Run `ib-gateway`'s `/ib-sync` first so a snapshot exists under
 ## /ib-analyze — run all diagnostics
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/scripts/analyze.py \
-  --config .ib-suite/config.yaml \
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-portfolio-analyst/scripts/analyze.py \
+  --config $WORKSPACE_ROOT/.ib-suite/config.yaml \
   --snapshot data/snapshots/<account>/<ts>.json \
   --bars bars.json \
   --executions executions.json \
@@ -48,8 +38,8 @@ Pass Flex-sourced dividend history (a JSON array of `Dividend` rows) to include
 income diagnostics:
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/scripts/analyze.py \
-  --config .ib-suite/config.yaml \
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-portfolio-analyst/scripts/analyze.py \
+  --config $WORKSPACE_ROOT/.ib-suite/config.yaml \
   --snapshot data/snapshots/<account>/<ts>.json \
   --dividends dividends.json \
   --out data/runs/$(date +%Y%m%dT%H%M%S)

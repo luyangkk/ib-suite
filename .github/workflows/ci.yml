@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.13"]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -22,8 +22,34 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Bootstrap shared virtualenv
-        run: bash skills/ib-suite/scripts/setup_venv.sh
+      - name: Set up Node for the pinned Skills CLI
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.2.0
 
-      - name: Run tests
-        run: skills/ib-suite/.venv/bin/python -m pytest skills -q
+      - name: Set up the pinned lockfile compiler
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.12.13
+
+      - name: Verify dependency locks
+        run: |
+          uv pip compile --universal --generate-hashes skills/ib-suite/ib-common/pyproject.toml skills/ib-suite/requirements-runtime.in --output-file skills/ib-suite/requirements-runtime.lock
+          uv pip compile --universal --generate-hashes skills/ib-suite/requirements-build.in --output-file skills/ib-suite/requirements-build.lock
+          uv pip compile --universal --generate-hashes skills/ib-suite/ib-common/pyproject.toml skills/ib-suite/requirements-runtime.in skills/ib-suite/requirements-test.in --output-file skills/ib-suite/requirements-test.lock
+          git diff --exit-code -- skills/ib-suite/requirements-runtime.lock skills/ib-suite/requirements-build.lock skills/ib-suite/requirements-test.lock
+
+      - name: Install test and reference-validator dependencies
+        run: |
+          uv pip install --system --require-hashes -r skills/ib-suite/requirements-test.lock
+          uv pip install --system skills-ref==0.1.1
+
+      - name: Validate Agent Skills metadata
+        run: agentskills validate skills/ib-suite
+
+      - name: Run unit and contract tests
+        run: PYTHONPATH=skills/ib-suite/ib-common python -m pytest skills/ib-suite -q
+
+      - name: Verify all Skills CLI Agent installs
+        if: matrix.python-version == '3.13'
+        run: RUN_SKILLS_CLI_INTEGRATION=1 PYTHONPATH=skills/ib-suite/ib-common python -m pytest skills/ib-suite/tests/test_skills_cli_integration.py -q

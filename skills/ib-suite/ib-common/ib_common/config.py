@@ -26,7 +26,7 @@ class DataCfg(BaseModel):
 
 
 class StorageCfg(BaseModel):
-    root: str = "./data"
+    root: str = "data"
 
 
 class FlexCfg(BaseModel):
@@ -74,9 +74,10 @@ class Config(BaseModel):
 
 def load_config(path: str | Path) -> Config:
     """Load and validate config.yaml, applying defaults for missing keys."""
+    config_path = Path(path).expanduser().resolve()
     yaml = YAML(typ="safe")
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with config_path.open("r", encoding="utf-8") as f:
             raw = yaml.load(f)
     except (YAMLError, TypeError):
         raise ValueError("configuration YAML is malformed") from None
@@ -84,7 +85,20 @@ def load_config(path: str | Path) -> Config:
         raw = {}
     if not isinstance(raw, Mapping):
         raise ValueError("configuration root must be a mapping")
-    return Config(**dict(raw))
+    values = dict(raw)
+    storage = dict(values.get("storage") or {})
+    root = storage.get("root", "data")
+    if isinstance(root, str):
+        root_path = Path(root).expanduser()
+        if root_path.is_absolute():
+            resolved_root = root_path
+        elif root == ".ib-suite/data" and config_path.parent.name == ".ib-suite":
+            resolved_root = config_path.parent / "data"
+        else:
+            resolved_root = config_path.parent / root_path
+        storage["root"] = str(resolved_root.resolve())
+    values["storage"] = storage
+    return Config(**values)
 
 
 def resolve_base_currency(cfg: Config, account_base: str | None) -> str:

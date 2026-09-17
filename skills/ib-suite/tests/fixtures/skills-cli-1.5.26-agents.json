@@ -1,0 +1,18 @@
+{
+  "cli_version": "1.5.26",
+  "agents": [
+    "AdaL", "AiderDesk", "Amp", "Antigravity", "Antigravity CLI", "AstrBot",
+    "Augment", "Autohand Code CLI", "Claude Code", "Cline", "CodeArts Agent",
+    "CodeBuddy", "Code Studio", "Codemaker", "Codex", "Command Code", "Continue",
+    "Cortex Code", "Crush", "Cursor", "Deep Agents", "Devin for Terminal", "Dexto",
+    "Droid", "Eve", "Firebender", "ForgeCode", "Gemini CLI", "GitHub Copilot",
+    "Goose", "Grok Build", "Hermes Agent", "IBM Bob", "Kilo Code", "Kimi Code CLI",
+    "Kimchi", "Kiro CLI", "Kode", "Lingma", "Loaf", "MCPJam", "MiniMax Code",
+    "Mistral Vibe", "Moxby", "Mux", "Neovate", "Ona", "OpenClaw", "OpenCode",
+    "OpenHands", "Pi", "Pochi", "Posit Assistant", "PromptScript", "Qoder", "Qoder CN",
+    "Qwen Code", "Reasonix", "Replit", "Roo Code", "Rovo Dev", "Sarvam Code",
+    "Tabnine CLI", "Terramind", "Tinycloud", "Trae", "Trae CN", "Universal", "Warp",
+    "Windsurf", "ZCode", "Zed", "Zencoder", "Zenflow", "fx", "iFlow CLI",
+    "inference.sh", "Jazz", "Junie"
+  ]
+}

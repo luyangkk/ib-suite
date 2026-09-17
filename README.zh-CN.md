@@ -1,4 +1,4 @@
-# ib-suite — 面向 AI Agent 的只读 Interactive Brokers 工具集
+# ib-suite — 面向 AI Agent 的只读 Interactive Brokers 诊断工具
 
 [English](README.md) | **简体中文**
 
@@ -8,17 +8,14 @@
 [![Read-only](https://img.shields.io/badge/IB%20access-read--only-2ea44f)](#安全与只读边界)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
-一套可移植的 **Agent Skill** 工具集(基于 `SKILL.md` 约定),以**只读**方式拉取
-**Interactive Brokers(IBKR)** 账户数据,并将其转化为结构化的组合诊断——账户健康、
-持仓、当日盈亏、成交历史、股息收入、期权希腊值,以及一份分级(P0–P3)的诊断报告。
-**全程绝不下单、改单或撤单。**
+这是一个可移植的 **Agent Skill**。它以只读方式读取 **Interactive Brokers (IBKR)**
+账户数据，生成账户健康、持仓、当日盈亏、成交历史、股息收入、期权希腊值和 P0–P3
+分级组合诊断报告。**它不会下单、改单或撤单。**
 
-**不绑定任何单一 agent。** 它与 [OpenClaw](https://clawhub.ai) 原生集成(斜杠命令 +
-gating),也适用于任何加载 `SKILL.md` 技能的 agent 运行时;而且——由于每个入口都是向
-stdout 打印 JSON 的普通 Python 脚本,背后还有可导入的 `ib-common` 库——它同样可以被
-其他任意 agent、自动化流程,或你本人直接驱动。
-
-一个索引技能 + 八个功能子技能 + 一个共享库。整个 `skills/ib-suite/` 目录是唯一可安装单元。
+仓库只发布一个可安装 Skill：`ib-suite`。它不绑定某个 Agent；只要运行时支持
+[Agent Skills 规范](https://agentskills.io/specification)，就能加载其中的 `SKILL.md`。
+每项能力的操作说明放在按主题拆分的参考文档里，不作为独立 Skill 安装。脚本也可以由
+Agent、自动化任务或命令行直接调用。
 
 ---
 
@@ -40,261 +37,219 @@ stdout 打印 JSON 的普通 Python 脚本,背后还有可导入的 `ib-common` 
 
 ## 功能特性
 
-`ib-suite` 是路由/索引技能;真正干活的是下面八个子技能。在 OpenClaw 下每个都暴露为
-一个 `/ib-*` 斜杠命令;在其他运行时,你通过其 `SKILL.md` 调用同一个技能,或直接调用
-入口脚本(见[安装](#安装))。
+`ib-suite` 是唯一的入口 Skill。它根据请求引导到对应的参考文档和脚本；下面的能力都不需要单独安装。
 
-| 技能 | 命令 | 作用 | 是否联网 |
-|---|---|---|---|
-| `ib-suite` | — | 索引/路由 + 首次引导(建 venv + live/paper 配置)。自身不执行任何操作。 | 否 |
-| `ib-gateway` | `/ib-sync` | 只读摄取 → 本地数据湖(快照 JSON + 持仓 Parquet)。 | IB Gateway / Flex |
-| `ib-account-overview` | `/ib-account-overview` | 实时账户快照:净值、现金、购买力、保证金、流动性、盈亏、按币种拆分。 | IB Gateway |
-| `ib-positions-overview` | `/ib-positions-overview` | 实时增强持仓,四种维度排序,标注最集中的标的。 | IB Gateway |
-| `ib-daily-pnl` | `/ib-daily-pnl` | 当日已实现/未实现盈亏,盈亏榜,按资产类别与币种拆分。 | IB Gateway |
-| `ib-trade-history` | `/ib-trade-history` | Flex 成交历史、佣金、已实现 FIFO 盈亏、胜负统计。 | Flex Web Service |
-| `ib-dividend-income` | `/ib-dividend-income` | 仅 Flex 的已付/预期股息、税、归因、年度估算、收益率。 | Flex Web Service |
-| `ib-options-overview` | `/ib-options-overview` | 实时期权持仓、IV、希腊值、到期敞口、集中度。 | IB Gateway |
-| `ib-portfolio-analyst` | `/ib-analyze` | 离线诊断:读数据湖 → P0–P3 分级 `report.md` + 图表。 | 否 |
+| 能力 | 作用 | 是否联网 |
+|---|---|---|
+| `ib-suite` | 入口 Skill、首次设置和能力路由。 | 否 |
+| Gateway 同步 | 只读写入工作区本地数据：账户快照 JSON 与持仓 Parquet。 | IB Gateway / Flex |
+| 账户概览 | 实时查看净值、现金、购买力、保证金、流动性、盈亏和币种拆分。 | IB Gateway |
+| 持仓概览 | 实时增强持仓，按四种维度排序，标出最集中的标的。 | IB Gateway |
+| 当日盈亏 | 今日已实现和未实现盈亏、盈亏排名，以及资产类别和币种拆分。 | IB Gateway |
+| 成交历史 | Flex 成交、佣金、FIFO 已实现盈亏和胜负统计。 | Flex Web Service |
+| 股息收入 | 仅通过 Flex 查询已付和预期股息、税、归因、年度估算和收益率。 | Flex Web Service |
+| 期权概览 | 实时期权持仓、IV、希腊值、到期敞口和集中度。 | IB Gateway |
+| 组合分析 | 离线读取本地数据，生成 P0–P3 `report.md` 和图表。 | 否 |
 
-四个实时概览与两个 Flex 报表器**只向 stdout 打印一个可解析的 JSON 对象,不做任何持久化**。
-只有 `/ib-sync` 会写入本地数据湖;`/ib-analyze` 完全离线。
+实时概览与 Flex 报表都会向 stdout 输出一个可解析的 JSON 对象，不保存结果。Gateway 同步会写入本地数据；组合分析在拿到输入文件后完全离线。
 
 ---
 
 ## 环境要求
 
-- **Python ≥ 3.11** 且在 `PATH` 中(真正的引擎;由 `pyproject.toml` 强制)。
-- **一种调用方式**——要么用一个加载 `SKILL.md` 技能的 agent 运行时
-  (如 [OpenClaw](https://clawhub.ai)),**要么**什么都不额外装:直接调用入口脚本 /
-  导入 `ib-common`。
-- 本地运行的 **IB Gateway**(或 TWS)并**开启 Read-Only API**——paper 端口 `4002`,
-  live 端口 `4001`——所有*实时*技能(`/ib-sync`、账户/持仓/当日盈亏/期权概览)都需要它。
-- **Flex Web Service token + Query ID**——仅两个 Flex 技能
-  (`/ib-trade-history`、`/ib-dividend-income`)需要。见[配置](#配置)。
-- macOS 或 Linux(`os: [darwin, linux]`)。
+- `PATH` 中有 **Python 3.11 或更高版本**。
+- 一个能加载 `SKILL.md` 的 Agent 运行时，或者可以直接执行 Python 脚本的命令行或自动化工具。
+- 本地运行的 **IB Gateway**（或 TWS），并开启 **Read-Only API**。常见配置是 paper 使用端口 `4002`、live 使用 `4001`。Gateway 同步、账户、持仓、当日盈亏和期权概览都需要它。
+- **Flex Web Service token 和 Query ID**，仅成交历史和股息收入需要。见[配置](#配置)。
+- macOS 或 Linux。
 
 ---
 
 ## 安装
 
-克隆仓库,然后构建共享虚拟环境。不同运行时的唯一区别在于*克隆到哪里*,以及技能*如何被
-发现*。
+### 用 Skills CLI 安装
 
-### 1. 克隆
-
-```bash
-# 使用 OpenClaw —— 克隆到 skills 根目录以便自动发现:
-git clone https://github.com/luyangkk/ib-suite.git \
-  ~/.openclaw/workspace/skills/ib-suite
-
-# 使用其他任意 agent,或直接/库调用 —— 克隆到任意位置:
-git clone https://github.com/luyangkk/ib-suite.git ~/ib-suite
-```
-
-OpenClaw 会递归扫描 skills 根目录,自动发现嵌套的 `skills/ib-suite/SKILL.md`(及每个
-子技能)——技能*名称*取自各 `SKILL.md` 的 frontmatter,而非文件夹路径。其他支持
-SKILL.md 的运行时指向同一批文件;其余情况则直接调用脚本。
-
-### 2. 引导共享虚拟环境(仅需一次)
+推荐通过 Skills CLI 安装。它会发现唯一发布的 Skill，并让你选择本机 CLI 支持的目标 Agent。
 
 ```bash
-bash <clone>/skills/ib-suite/scripts/setup_venv.sh
+npx skills add luyangkk/ib-suite --skill ib-suite
 ```
 
-`<clone>` 即第 1 步克隆到的位置。该脚本幂等:它会挑选 Python ≥ 3.11,创建 `.venv`,
-并安装共享的 `ib-common` 包(可编辑模式)及运行时依赖。
+如果目标运行时要求明确指定安装位置，请在 CLI 中选择它支持的 copy 或 link 模式。安装完成后，让 Agent 加载已安装目录中的 `ib-suite/SKILL.md` 即可；无需注册子 Skill。
 
-### 3a. 加载(OpenClaw)
+维护者在 CI 中用 `skills@1.5.26` 验证安装；这是可复现测试的版本约束，不是强加给使用者的安装版本：
 
 ```bash
-# 在 OpenClaw 对话中:归档当前会话并新开一个
-/new
-# …或重启 gateway
-openclaw gateway restart
+npx --yes skills@1.5.26 add luyangkk/ib-suite --list
 ```
 
-用 `openclaw skills list` 验证——你应能看到 `ib-suite` 以及各 `/ib-*` 命令。
+无论是否加 `--full-depth`，该命令都只应列出 `ib-suite`。
 
-### 3b. 加载(其他任意 agent / 直接调用)
+### 手动接入或开发时克隆仓库
 
-让你的 agent 指向克隆下来的 `skills/ib-suite/` 目录及其 `SKILL.md` 文件,或直接调用
-入口脚本(见[快速开始](#快速开始))。无需任何 agent 专属注册。
+如果你的运行时不使用 Skills CLI，克隆仓库后让它加载 `skills/ib-suite/SKILL.md`：
 
-### 安装 PROMPT —— 把这段贴给任意有能力的 agent
-
-想让 agent 代劳?把下面这段提示词复制粘贴过去(通用形式适用于任意 agent;括号内的备注
-将其适配到 OpenClaw):
-
-```text
-Set up the read-only IBKR diagnostics skill suite for me:
-
-1. Clone https://github.com/luyangkk/ib-suite.git to a local directory.
-   (OpenClaw: clone it into my skills root, ~/.openclaw/workspace/skills/ib-suite)
-2. Build the shared virtualenv:
-   bash <clone>/skills/ib-suite/scripts/setup_venv.sh
-3. Read <clone>/skills/ib-suite/SKILL.md and the sub-skill SKILL.md files so you
-   know the available /ib-* capabilities, then tell me which ones you can run.
-   (OpenClaw: instead reload skills with /new, run `openclaw skills list`, and
-   show me every /ib-* command that is now available.)
-
-Important: this suite is strictly read-only. Do NOT place, modify, or cancel any
-order, and do NOT configure anything that writes to my IB account. If a step
-fails, stop and tell me the exact error instead of guessing.
+```bash
+git clone https://github.com/luyangkk/ib-suite.git
+cd ib-suite
 ```
 
-> 提示词说明:这段 PROMPT 通用于任意 agent;括号里的备注把它适配到 OpenClaw。首次实时
-> 运行前,记得先启动 IB Gateway 并开启 **Read-Only API**。
+安装后的 Skill 目录应保持只读。配置、环境、数据和报告要放到它之外、已有且可写的工作区中。
+
+### 初始化工作区环境
+
+先设置绝对路径，再执行一次可重复运行的初始化脚本：
+
+```bash
+export SKILL_ROOT="$(pwd)/skills/ib-suite"
+export WORKSPACE_ROOT="$HOME/ib-suite-workspace"  # 选择或创建一个可写工作区
+mkdir -p "$WORKSPACE_ROOT"
+
+bash "$SKILL_ROOT/scripts/setup_venv.sh" --workspace-root "$WORKSPACE_ROOT"
+```
+
+脚本会选择 Python 3.11+，创建带版本的虚拟环境，并在
+`$WORKSPACE_ROOT/.ib-suite/venv` 提供稳定入口。它不会向 `$SKILL_ROOT` 写入运行时数据。
+
+如果已有匹配的 wheelhouse，可以离线初始化：
+
+```bash
+bash "$SKILL_ROOT/scripts/setup_venv.sh" \
+  --workspace-root "$WORKSPACE_ROOT" --offline --wheelhouse "$WHEELHOUSE"
+```
+
+首次读取实时数据前，先启动 IB Gateway，并开启 **Read-Only API**。
 
 ---
 
 ## 快速开始
 
-首次使用会先经过引导(建 venv + 选 live/paper 生成配置),然后按
-`/ib-sync` → `/ib-analyze` 的顺序运行。
-
-1. **首次设置。** 在 OpenClaw 下由 `ib-suite` 索引技能负责:它会检测
-   `.ib-suite/config.yaml` 是否存在,确保 venv 就绪,询问一次 **live**(真实账户,
-   端口 4001)还是 **paper**(模拟,4002),并生成配置。在其他运行时下,你自行生成:
-   ```bash
-   <clone>/skills/ib-suite/.venv/bin/python \
-     <clone>/skills/ib-suite/scripts/init_config.py --mode live --out .ib-suite/config.yaml
-   ```
-   所有连接都是 `readonly=True`,因此 *live* 同样是只读的。
-2. **启动 IB Gateway** 并开启 Read-Only API。
-3. **摄取**当前账户与持仓——`/ib-sync`(OpenClaw),或用下方脚本。
-4. **分析**某个快照,生成分级报告 + 图表——`/ib-analyze`,或用下方脚本。
-
-我该运行哪个技能?
-
-| 你想要… | 技能 / 命令 |
-|---|---|
-| 从 IB 刷新账户/持仓数据 | `/ib-sync` |
-| 立刻查看净值、保证金、流动性与盈亏 | `/ib-account-overview` |
-| 列出全部持仓、排序、标注最集中标的 | `/ib-positions-overview` |
-| 看今天账户表现及其驱动因素 | `/ib-daily-pnl` |
-| 历史成交、佣金、已实现盈亏、胜负 | `/ib-trade-history` |
-| 已付/预期股息、税、归因、收益率 | `/ib-dividend-income` |
-| 期权持仓、IV、希腊值、到期敞口 | `/ib-options-overview` |
-| 基于已有数据出一份诊断报告 | `/ib-analyze` |
-
-**直接调用(任意 agent / 自动化 / 人工)。** 入口脚本向 stdout 打印结构化 JSON /
-输出路径,失败时以非零退出——无需任何 agent:
+先在工作区生成配置。模拟 Gateway 使用 `paper`；只有明确选择了真实 Gateway 端口时才使用 `live`。
 
 ```bash
-SKILLS=<clone>/skills/ib-suite            # 克隆下来的技能目录
-VENV=$SKILLS/.venv/bin/python
+export CONFIG="$WORKSPACE_ROOT/.ib-suite/config.yaml"
 
-# 摄取
-$VENV $SKILLS/ib-gateway/scripts/ib_sync.py --config .ib-suite/config.yaml
-
-# 仅 Flex 的股息收入(必须给出闭区间日期)
-$VENV $SKILLS/ib-dividend-income/scripts/dividend_income.py \
-  --config .ib-suite/config.yaml \
-  --start-date 2026-01-01 --end-date 2026-07-19
+"$WORKSPACE_ROOT/.ib-suite/venv/bin/python" \
+  "$SKILL_ROOT/scripts/init_config.py" \
+  --mode paper --out "$CONFIG"
 ```
 
-你也可以 `import ib_common`(已在 `.venv` 中以可编辑模式安装)把
-config/schema/storage/metrics/charts 等辅助能力当作库来复用。
+包括 `live` 模式在内，所有连接都会使用 `readonly=True`。
+
+1. 启动 IB Gateway 或 TWS，并开启 Read-Only API。
+2. 先读 `SKILL.md`，再读与当前请求对应的参考文档。
+3. 执行只读能力。例如，同步当前账户和持仓：
+
+   ```bash
+   "$WORKSPACE_ROOT/.ib-suite/venv/bin/python" \
+     "$SKILL_ROOT/ib-gateway/scripts/ib_sync.py" --config "$CONFIG"
+   ```
+
+4. 使用生成的快照做离线分析：
+
+   ```bash
+   "$WORKSPACE_ROOT/.ib-suite/venv/bin/python" \
+     "$SKILL_ROOT/ib-portfolio-analyst/scripts/analyze.py" \
+     --config "$CONFIG" \
+     --snapshot "$WORKSPACE_ROOT/.ib-suite/data/snapshots/<account>/<timestamp>.json" \
+     --out "$WORKSPACE_ROOT/.ib-suite/data/runs/<timestamp>"
+   ```
+
+该看哪份说明？
+
+| 你想做的事 | 参考文档 |
+|---|---|
+| 从 IB 刷新账户和持仓数据 | [Gateway 同步](skills/ib-suite/references/ib-gateway.md) |
+| 查看当前净值、保证金、流动性和盈亏 | [账户概览](skills/ib-suite/references/ib-account-overview.md) |
+| 列出并排序开放持仓 | [持仓概览](skills/ib-suite/references/ib-positions-overview.md) |
+| 解释今日已实现和未实现盈亏 | [当日盈亏](skills/ib-suite/references/ib-daily-pnl.md) |
+| 查看历史成交、佣金和已实现盈亏 | [成交历史](skills/ib-suite/references/ib-trade-history.md) |
+| 查看已付或预期股息、税和收益率 | [股息收入](skills/ib-suite/references/ib-dividend-income.md) |
+| 查看期权持仓、IV、希腊值、到期和集中度 | [期权概览](skills/ib-suite/references/ib-options-overview.md) |
+| 根据本地数据生成诊断报告 | [组合分析](skills/ib-suite/references/ib-portfolio-analyst.md) |
+
+脚本会向 stdout 输出结构化 JSON 或结果路径，失败时以非零状态退出，因此不依赖某个特定 Agent。
 
 ---
 
 ## 配置
 
-真实配置与数据都放在工作区本地的 `.ib-suite/` 目录(已 gitignore);技能目录只发布
-代码和 `config.example.yaml`。凭证只存本地——永不入库、永不打印。
+运行时状态统一放在 `$WORKSPACE_ROOT/.ib-suite/`。已安装的 Skill 只带代码、锁定依赖定义、参考文档和配置模板。凭据只留在本地，不应提交或打印。
 
-- **位置。** 运行时配置与数据湖位于工作区本地的 `.ib-suite/` 目录(已 gitignore,
-  运行时创建)。模板见
-  [`skills/ib-suite/ib-common/config.example.yaml`](skills/ib-suite/ib-common/config.example.yaml)。
-- **连接。** `port: 4002`(paper)/ `4001`(live);`read_only: true`——保持为 true,
-  本项目永不下单。
-- **Flex 凭证。** `/ib-trade-history` 与 `/ib-dividend-income` 共用一个 `flex.token`,
-  但各自维护**独立的按窗口 Query ID 映射**
-  (`flex.trade_history_query_ids` / `flex.dividend_query_ids`)。YAML 中每个 ID 都要
-  加引号以保留前导零。token 通过技能的设置流程(经 stdin 传入)配置——绝不写在命令行,
-  也绝不走环境变量兜底。
-- **股息 Flex Query。** 股息技能需要一个 365 天窗口、含六个必需段落的 Activity Flex
-  Query。见独立指南:
-  [`skills/ib-suite/ib-dividend-income/flex-query-setup.md`](skills/ib-suite/ib-dividend-income/flex-query-setup.md)。
-- **阈值。** 所有 P0–P3 分级阈值(杠杆、集中度、VaR、预扣税拖累、成本收益率……)都在
-  配置模板的 `thresholds:` 下——在那里调整。
-- **成本控制。** `options.fetch_market_data: false` 为默认:期权的持仓/价格/盈亏仍可用
-  (IB 计算,免费),但会跳过希腊值/IV 以避免 IBKR 快照费用。设为 `true` 可主动开启。
+- **位置。** 配置文件为 `$WORKSPACE_ROOT/.ib-suite/config.yaml`，模板见 [`skills/ib-suite/ib-common/config.example.yaml`](skills/ib-suite/ib-common/config.example.yaml)。`storage.root: data` 相对于配置文件所在目录解析。
+- **连接。** 按实际情况使用 `port: 4002`（paper）或 `4001`（live），并保持 `read_only: true`。
+- **Flex 凭据。** 成交历史和股息收入共用 `flex.token`，但分别使用自己的 Query ID 映射。YAML 中的 Query ID 请加引号，避免丢失前导零。token 通过设置流程或 stdin 传入，不要放到命令行，也不要通过已提交的环境变量兜底。
+- **Flex Query。** 使用这两类报表前，分别按[成交历史设置](skills/ib-suite/references/ib-trade-history-flex-query-setup.md)或[股息设置](skills/ib-suite/references/ib-dividend-income-flex-query-setup.md)创建查询。
+- **阈值。** 杠杆、集中度、VaR、预扣税拖累、成本收益率等 P0–P3 阈值，都在配置模板的 `thresholds:` 下。
+- **费用控制。** 默认 `options.fetch_market_data: false`。持仓、价格、市值和盈亏仍使用 IB 已计算的组合字段；希腊值和 IV 会跳过，避免触发 IBKR 快照费用。只有确实需要请求该行情时才设为 `true`。
 
 ---
 
 ## 安全与只读边界
 
-这是一条**硬边界**,不是偏好:
+这是硬边界：
 
-- 每个 IB Gateway 连接都用 `readonly=True`;没有任何模块导入下单 API。
-- **绝不下单/改单/撤单,不做实时 WhatIf 保证金校验,不订阅实时行情流,不向 IB 写入
-  任何数据**——永远不会。
-- Flex 报表器与离线分析绝不触碰你的账户状态。
-- 敏感信息(Flex token、Query ID、账户号)绝不出现在 stdout、日志或入库文件中。
-  测试 fixture 已脱敏。
+- 每个 IB Gateway 连接都使用 `readonly=True`，没有模块导入下单 API。
+- 项目不包含下单、改单、撤单、实时 WhatIf 保证金检查、实时行情流或向 IB 写入数据的路径。
+- Flex 报表和离线分析不会改变账户状态。
+- Flex token、Query ID、账户号和真实快照不得出现在 stdout、日志、fixture 或版本库中。
 
 ---
 
 ## 开发与测试
 
-本仓库**没有** `validate.py` / `package_skill.py`;验证靠测试 + 评审。
+运行、构建和测试锁文件由 `uv==0.12.13` 生成。修改依赖输入时，用该版本更新所有相关锁文件。开发环境应独立于已安装 Skill 所使用的工作区运行环境。
 
 ```bash
-SKILLS=<clone>/skills/ib-suite
-
-# 首次或依赖变更后:引导共享 venv(幂等)
-bash $SKILLS/scripts/setup_venv.sh
+python3.11 -m venv .venv
+.venv/bin/python -m pip install --require-hashes \
+  -r skills/ib-suite/requirements-test.lock
+.venv/bin/python -m pip install -e skills/ib-suite/ib-common
 
 # 全量测试
-$SKILLS/.venv/bin/python -m pytest skills -q
+PYTHONPATH=skills/ib-suite/ib-common .venv/bin/python -m pytest skills/ib-suite -q
 
-# 仅测某个技能,例如股息收入
-$SKILLS/.venv/bin/python -m pytest skills/ib-suite/ib-dividend-income -q
+# 分发与初始化契约
+PYTHONPATH=skills/ib-suite/ib-common .venv/bin/python -m pytest \
+  skills/ib-suite/scripts/tests/test_bootstrap.py \
+  skills/ib-suite/tests/test_distribution_contract.py -q
 ```
 
-约定:Python ≥ 3.11、`from __future__ import annotations`、Pydantic v2 模型、
-TDD(红 → 绿)、只做外科手术式改动。网络/IB 访问隐藏在可注入的
-`client_factory` / `http_get` 之后,使测试完全离线运行。
+使用 Python 3.11+，先写失败测试再实现，改动保持小而明确。测试必须离线运行，网络和 IB 访问应通过可注入的客户端隔离。不要提交虚拟环境、`.ib-suite/`、凭据、真实快照或生成报告。
 
 ---
 
 ## 项目结构
 
 ```text
-skills/ib-suite/                 唯一可安装的 Agent Skill 单元
-  SKILL.md                       索引/路由技能(always:true,负责引导)
-  scripts/setup_venv.sh          幂等的共享 venv 引导脚本
-  ib-common/                     共享 pip 包(config/schema/storage/metrics/charts)——不是技能
-  ib-gateway/                    /ib-sync                : IB/Flex → 本地数据湖
-  ib-account-overview/           /ib-account-overview    : 实时账户概览 → stdout JSON
-  ib-positions-overview/         /ib-positions-overview  : 实时增强持仓 → stdout JSON
-  ib-daily-pnl/                  /ib-daily-pnl           : 当日盈亏拆分 → stdout JSON
-  ib-trade-history/              /ib-trade-history       : Flex 成交 → stdout JSON
-  ib-dividend-income/            /ib-dividend-income     : Flex 股息 → stdout JSON
-  ib-options-overview/           /ib-options-overview    : 实时期权 + 希腊值 → stdout JSON
-  ib-portfolio-analyst/          /ib-analyze             : 数据湖 → report.md + 图表
+skills/ib-suite/                 一个可安装的 Agent Skill
+  SKILL.md                       入口 Skill 和能力路由
+  references/                    每项能力的专用说明
+  scripts/setup_venv.sh          工作区环境初始化脚本
+  scripts/bootstrap.py           带版本的虚拟环境生命周期管理
+  requirements-*.in / *.lock     运行、构建和测试依赖
+  ib-common/                     共享 Python 包：配置、模型、存储、指标和图表
+  ib-gateway/                    账户和持仓 -> 本地数据
+  ib-account-overview/           实时账户概览 -> stdout JSON
+  ib-positions-overview/         实时持仓概览 -> stdout JSON
+  ib-daily-pnl/                  当日盈亏拆分 -> stdout JSON
+  ib-trade-history/              Flex 成交历史 -> stdout JSON
+  ib-dividend-income/            Flex 股息报告 -> stdout JSON
+  ib-options-overview/           实时期权和希腊值 -> stdout JSON
+  ib-portfolio-analyst/          本地数据 -> 报告和图表
 ```
-
-完整架构、约定与贡献规则见 [`CLAUDE.md`](CLAUDE.md)。
 
 ---
 
 ## 免责声明
 
-本软件**仅用于信息与诊断用途**。它不构成投资建议,也不做任何交易决策。
-Interactive Brokers 与 IBKR 为 Interactive Brokers LLC 的商标,本项目与其无任何隶属、
-背书或赞助关系。账户的使用及遵守 IBKR 条款的责任由你自行承担。
+本软件**仅用于信息和诊断用途**，不构成投资建议，也不做交易决策。Interactive Brokers 和 IBKR 是 Interactive Brokers LLC 的商标；本项目与其没有隶属、背书或赞助关系。你需要自行负责账户使用并遵守 IBKR 的条款。
 
 ---
 
 ## 参与贡献
 
-欢迎提 Issue 和 PR。请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md) 了解开发环境、
-只读不变量与提交约定;[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) 了解社区准则;
-以及 [`SECURITY.md`](SECURITY.md) 私下报告安全问题。请运行全量测试,并确保敏感信息与
-运行时数据(`.ib-suite/`、真实 `config.yaml`、实时快照)不进入提交。完整架构见
-[`CLAUDE.md`](CLAUDE.md)。
+欢迎提交 Issue 和 Pull Request。开发环境和提交约定见 [`CONTRIBUTING.md`](CONTRIBUTING.md)，社区行为准则见 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)，安全问题请按 [`SECURITY.md`](SECURITY.md) 私下报告。提交前请运行完整测试，并确保不把凭据和运行时数据带进版本库。
 
 ---
 

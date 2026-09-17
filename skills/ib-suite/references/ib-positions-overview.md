@@ -1,13 +1,3 @@
----
-name: ib-positions-overview
-description: Read-only positions overview from Interactive Brokers. Use when the user asks to list every open position with its symbol, name, asset type, quantity, long/short, average cost, current price, market value, unrealized P&L and return, account weight, industry, market/country, and currency, or to rank positions by market value, profit, loss, or account weight and flag the most concentrated name. Reads position state only — never account cash detail, never orders.
-metadata:
-  openclaw:
-    requires:
-      bins: [python3]
-      config: [config.yaml]
-    os: [darwin, linux]
----
 
 # ib-positions-overview
 
@@ -28,7 +18,7 @@ access, and tick **Read-Only API** in Gateway settings as an extra guard.
 ### /ib-positions-overview — read-only enriched positions overview
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/scripts/positions_overview.py --config .ib-suite/config.yaml
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-positions-overview/scripts/positions_overview.py --config $WORKSPACE_ROOT/.ib-suite/config.yaml
 ```
 
 Prints one JSON object to stdout (parseable). It reads position state live and

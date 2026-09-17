@@ -1,13 +1,3 @@
----
-name: ib-daily-pnl
-description: Read-only daily (today's) P&L breakdown from Interactive Brokers. Use when the user asks how their account did today, today's total/realized/unrealized P&L, which positions contributed the most profit or loss today, how each asset class (stock/option/ETF/forex) or currency contributed, or whether one name dominated today's move. Reads live P&L state only — never places, modifies, or cancels an order.
-metadata:
-  openclaw:
-    requires:
-      bins: [python3]
-      config: [config.yaml]
-    os: [darwin, linux]
----
 
 # ib-daily-pnl
 
@@ -38,7 +28,7 @@ access, and tick **Read-Only API** in Gateway settings as an extra guard.
 ### /ib-daily-pnl — read-only daily P&L breakdown
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/scripts/daily_pnl.py --config .ib-suite/config.yaml
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-daily-pnl/scripts/daily_pnl.py --config $WORKSPACE_ROOT/.ib-suite/config.yaml
 ```
 
 Prints one JSON object to stdout (parseable). It reads live P&L state and does

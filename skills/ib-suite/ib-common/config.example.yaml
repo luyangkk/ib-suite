@@ -9,7 +9,7 @@ data:
   freshness_hours: 24
   base_currency: null # null => follow the IB account BASE currency
 storage:
-  root: .ib-suite/data   # keep runtime data out of the skill dir (workspace-local)
+  root: data             # resolved from this config file's workspace-local directory
 flex:
   token: null       # workspace-local secret; never commit a real value
   # keys: day count or 'mtd'/'ytd' -> Flex Query ID; quote values to preserve leading zeros

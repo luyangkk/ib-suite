@@ -1,13 +1,3 @@
----
-name: ib-account-overview
-description: Read-only account financial overview from Interactive Brokers. Use when the user asks for net liquidation, cash balance, buying power, margin (initial/maintenance/used), excess liquidity, or daily/unrealized/realized P&L, with per-currency balances converted to the base currency. Reads account state only — never positions detail, never orders.
-metadata:
-  openclaw:
-    requires:
-      bins: [python3]
-      config: [config.yaml]
-    os: [darwin, linux]
----
 
 # ib-account-overview
 
@@ -28,7 +18,7 @@ access, and tick **Read-Only API** in Gateway settings as an extra guard.
 ### /ib-account-overview — read-only account financial overview
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/scripts/account_overview.py --config .ib-suite/config.yaml
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-account-overview/scripts/account_overview.py --config $WORKSPACE_ROOT/.ib-suite/config.yaml
 ```
 
 Prints a JSON object to stdout (parseable) with the fields below. It reads

@@ -7,6 +7,7 @@ token. The IB read-only boundary is unaffected: this only writes config.yaml.
 """
 from __future__ import annotations
 import argparse
+import os
 from pathlib import Path
 
 from ruamel.yaml import YAML
@@ -40,6 +41,7 @@ def init_config(template: str | Path, out: str | Path, mode: str = "live",
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         yaml.dump(doc, f)
+    os.chmod(out_path, 0o600)
 
     return {"config": str(out_path), "mode": mode, "port": port}
 

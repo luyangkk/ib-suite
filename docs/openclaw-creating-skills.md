@@ -1,3 +1,8 @@
+> Compatibility note for this repository: `skills/ib-suite/` is published as a
+> portable Agent Skill. Its distributable `SKILL.md` uses only Agent Skills
+> standard frontmatter. The OpenClaw-specific examples below are not part of
+> this project's portable payload.
+
 Skills teach the agent how and when to use tools. Each skill is a directory
 containing a `SKILL.md` file with YAML frontmatter and markdown instructions.
 OpenClaw loads skills from several roots in a defined [precedence order](/tools/skills#loading-order).

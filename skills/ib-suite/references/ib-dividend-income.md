@@ -1,20 +1,12 @@
----
-name: ib-dividend-income
-description: Read-only Interactive Brokers dividend income from Activity Flex Query data. Use when the user asks for paid or expected dividends over an inclusive date range, withholding and net income, currency or listing-country attribution, leading contributors, annual dividend-income estimates, or portfolio dividend yield. Reads the Flex Web Service only; never uses Gateway, market data, or orders.
-metadata:
-  openclaw:
-    requires:
-      bins: [python3]
-    os: [darwin, linux]
----
 
 # ib-dividend-income
 
 Use `/ib-dividend-income` to retrieve one read-only Activity Flex report and
-present dividend income for an inclusive date range. This is Flex-only: do not
-start IB Gateway, do not request market data, do not place, modify, or cancel
-orders, and do not persist account data. Never display the Flex token, Query ID,
-account ID, raw XML, or service URL.
+present dividend income for an inclusive date range. This is Flex-only and
+never uses Gateway, market data, or orders: do not start IB Gateway, do not
+request market data, do not place, modify, or cancel orders, and do not persist
+account data. Never display the Flex token, Query ID, account ID, raw XML, or
+service URL.
 
 ## Resolve the date range
 
@@ -43,8 +35,8 @@ count toward `history_days_covered` or make a 365-day annual estimate complete.
 Run exactly one command with both resolved dates:
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/scripts/dividend_income.py \
-  --config .ib-suite/config.yaml \
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-dividend-income/scripts/dividend_income.py \
+  --config $WORKSPACE_ROOT/.ib-suite/config.yaml \
   --start-date 2026-01-01 \
   --end-date 2026-07-19
 ```
@@ -57,7 +49,7 @@ Python reconciliation, conversion, attribution, or estimation rules.
 
 For `setup_required`, `coverage_required`, or `query_update_required`, stop
 financial presentation, link the standalone guide at
-`{baseDir}/flex-query-setup.md`, and show only the returned `missing` schema
+`$SKILL_ROOT/references/ib-dividend-income-flex-query-setup.md`, and show only the returned `missing` schema
 names. Ask for one item at a time, and only when it is needed:
 
 - If `flex.dividend_query_ids` is missing, ask which numeric window the user
@@ -75,8 +67,8 @@ dividend target needs a query carrying the six dividend sections (the full
 7-section query also works):
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/../ib-trade-history/scripts/configure_flex.py \
-  --config .ib-suite/config.yaml \
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-trade-history/scripts/configure_flex.py \
+  --config $WORKSPACE_ROOT/.ib-suite/config.yaml \
   --token-stdin \
   --target dividend \
   --window '365=<query-id>'

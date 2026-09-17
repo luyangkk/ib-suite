@@ -1,5 +1,6 @@
 # skills/ib-common/tests/test_config.py
 from datetime import date
+import os
 from pathlib import Path
 import pytest
 from ib_common.config import load_config, resolve_base_currency
@@ -12,6 +13,41 @@ def test_load_config_applies_defaults():
     assert cfg.connection.read_only is True          # default must be read-only
     assert cfg.data.freshness_hours == 24.0          # default freshness
     assert cfg.connection.port == 4002               # paper default
+
+
+def test_load_config_resolves_storage_root_from_config_directory(tmp_path):
+    config_dir = tmp_path / "workspace" / ".ib-suite"
+    config_dir.mkdir(parents=True)
+    config = config_dir / "config.yaml"
+    config.write_text("storage:\n  root: data\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    previous = Path.cwd()
+    try:
+        os.chdir(elsewhere)
+        cfg = load_config(config)
+    finally:
+        os.chdir(previous)
+
+    assert Path(cfg.storage.root) == config_dir / "data"
+
+
+def test_load_config_preserves_absolute_storage_root(tmp_path):
+    data_root = tmp_path / "external-data"
+    config = tmp_path / "config.yaml"
+    config.write_text(f"storage:\n  root: {data_root}\n", encoding="utf-8")
+
+    assert Path(load_config(config).storage.root) == data_root
+
+
+def test_load_config_migrates_exact_legacy_workspace_storage_root(tmp_path):
+    config_dir = tmp_path / "workspace" / ".ib-suite"
+    config_dir.mkdir(parents=True)
+    config = config_dir / "config.yaml"
+    config.write_text("storage:\n  root: .ib-suite/data\n", encoding="utf-8")
+
+    assert Path(load_config(config).storage.root) == config_dir / "data"
 
 def test_base_currency_follows_account_when_present():
     cfg = load_config(FIX / "config_minimal.yaml")

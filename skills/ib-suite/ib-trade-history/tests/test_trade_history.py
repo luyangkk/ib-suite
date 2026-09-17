@@ -227,19 +227,18 @@ def test_orchestration_requires_base_currency_and_flex_environment(tmp_path):
 
 def test_skill_metadata_and_source_preserve_read_only_boundary():
     """The skill is discoverable, has exact runnable paths, and no order path."""
-    skill = (Path(__file__).parent.parent / "SKILL.md").read_text(encoding="utf-8")
+    skill = (
+        Path(__file__).resolve().parents[2] / "references" / "ib-trade-history.md"
+    ).read_text(encoding="utf-8")
     source = SPEC.read_text(encoding="utf-8")
-    assert "name: ib-trade-history" in skill
-    assert "Read-only" in skill
-    assert "{baseDir}/../.venv/bin/python {baseDir}/scripts/trade_history.py" in skill
+    assert "Read only" in skill
+    assert "$WORKSPACE_ROOT/.ib-suite/venv/bin/python" in skill
+    assert "$SKILL_ROOT/ib-trade-history/scripts/trade_history.py" in skill
     assert "--window" in skill
     assert "--period" in skill
     assert "ytd" in skill
     assert "query_ids" in skill
-    assert "env: [FLEX_TOKEN, FLEX_QUERY_ID]" not in skill
-    assert (
-        "{baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py" in skill
-    )
+    assert "$SKILL_ROOT/ib-trade-history/scripts/configure_flex.py" in skill
     assert "never echoes values" in skill
     assert "does not validate against the Flex Web Service" in skill
     assert "ibCommissionCurrency" in skill
@@ -251,14 +250,15 @@ def test_skill_metadata_and_source_preserve_read_only_boundary():
 
 def test_skill_guides_window_registration_and_force_replacement():
     """The skill shows how to register windows and force replacements."""
-    skill = (Path(__file__).parent.parent / "SKILL.md").read_text(encoding="utf-8")
-    register = (
-        "{baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \\\n"
-        "  --config .ib-suite/config.yaml --token-stdin \\\n"
-        "  --target trade_history \\\n"
-        "  --window '7=<query-id>'"
-    )
-    assert register in skill
+    skill = (
+        Path(__file__).parents[2] / "references" / "ib-trade-history.md"
+    ).read_text(encoding="utf-8")
+    assert "$WORKSPACE_ROOT/.ib-suite/venv/bin/python" in skill
+    assert "$SKILL_ROOT/ib-trade-history/scripts/configure_flex.py" in skill
+    assert "--config $WORKSPACE_ROOT/.ib-suite/config.yaml" in skill
+    assert "--token-stdin" in skill
+    assert "--target trade_history" in skill
+    assert "--window '7=<query-id>'" in skill
     assert "--token '<provided-token>'" not in skill
     assert "--force" in skill
     assert "smallest configured window" in skill

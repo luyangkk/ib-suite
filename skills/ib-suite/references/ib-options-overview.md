@@ -1,13 +1,3 @@
----
-name: ib-options-overview
-description: Read-only Interactive Brokers option positions and Greeks overview. Use when the user asks for open option contracts, IV, Delta, Gamma, Theta, Vega, moneyness, expiry exposure, or option concentration. Reads live positions only - never places, modifies, or cancels an order.
-metadata:
-  openclaw:
-    requires:
-      bins: [python3]
-      config: [config.yaml]
-    os: [darwin, linux]
----
 
 # ib-options-overview
 
@@ -26,7 +16,7 @@ both subscriptions afterward. This may incur IBKR snapshot charges for symbols
 without a real-time market-data subscription.
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/scripts/options_overview.py --config .ib-suite/config.yaml
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-options-overview/scripts/options_overview.py --config $WORKSPACE_ROOT/.ib-suite/config.yaml
 ```
 
 The JSON lists each contract's underlying, Call/Put, long/short side, strike,

@@ -1,4 +1,6 @@
 from __future__ import annotations
+import os
+import stat
 import sys
 from pathlib import Path
 
@@ -42,8 +44,7 @@ def test_template_defaults_preserved(tmp_path):
     out = tmp_path / "config.yaml"
     init_config.init_config(TEMPLATE, out, mode="paper")
     cfg = load_config(out)
-    # storage.root and base_currency come straight from the template
-    assert cfg.storage.root == ".ib-suite/data"
+    assert Path(cfg.storage.root) == out.parent / "data"
     assert cfg.data.base_currency is None
     assert cfg.connection.read_only is True
     # thresholds copied verbatim (spot-check a couple of keys)
@@ -71,3 +72,19 @@ def test_invalid_mode_raises(tmp_path):
     out = tmp_path / "config.yaml"
     with pytest.raises(ValueError):
         init_config.init_config(TEMPLATE, out, mode="demo")
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_config_permissions_never_exceed_owner_read_write(tmp_path, force):
+    out = tmp_path / "config.yaml"
+    if force:
+        out.write_text("replace: true\n", encoding="utf-8")
+        out.chmod(0o666)
+
+    previous = os.umask(0)
+    try:
+        init_config.init_config(TEMPLATE, out, mode="paper", force=force)
+    finally:
+        os.umask(previous)
+
+    assert stat.S_IMODE(out.stat().st_mode) == 0o600

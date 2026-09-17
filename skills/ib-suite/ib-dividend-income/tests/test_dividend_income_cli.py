@@ -19,6 +19,8 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 from dividend_income import _sanitize, dividend_income
 
+GUIDE = "references/ib-dividend-income-flex-query-setup.md"
+
 
 @pytest.fixture
 def sample_xml() -> str:
@@ -136,7 +138,7 @@ def test_setup_missing_token_returns_stable_guide(tmp_path: Path) -> None:
     assert result == {
         "status": "setup_required",
         "missing": ["flex.token"],
-        "guide": "flex-query-setup.md",
+        "guide": GUIDE,
         "run_id": "missing-token-run",
     }
     assert called is False
@@ -156,7 +158,7 @@ def test_setup_empty_query_map_returns_stable_guide(tmp_path: Path) -> None:
     assert result == {
         "status": "setup_required",
         "missing": ["flex.dividend_query_ids"],
-        "guide": "flex-query-setup.md",
+        "guide": GUIDE,
         "run_id": "empty-map-run",
     }
 
@@ -175,7 +177,7 @@ def test_coverage_insufficient_window_returns_required_state(tmp_path: Path) -> 
     assert result == {
         "status": "coverage_required",
         "missing": ["flex.dividend_query_ids.365"],
-        "guide": "flex-query-setup.md",
+        "guide": GUIDE,
         "run_id": "coverage-run",
     }
 
@@ -197,7 +199,7 @@ def test_query_update_missing_section_returns_schema_names(
     )
 
     assert result["status"] == "query_update_required"
-    assert result["guide"] == "flex-query-setup.md"
+    assert result["guide"] == GUIDE
     assert result["run_id"] == "schema-run"
     assert result["missing"] == [
         "CashTransactions",
@@ -225,7 +227,7 @@ def test_setup_blank_numeric_query_id_does_not_fetch(tmp_path: Path) -> None:
     assert result == {
         "status": "setup_required",
         "missing": ["flex.dividend_query_ids"],
-        "guide": "flex-query-setup.md",
+        "guide": GUIDE,
         "run_id": "blank-query-run",
     }
 
@@ -430,7 +432,7 @@ def test_cli_malformed_query_map_is_structured_and_never_leaks(
     assert completed.returncode != 0
     assert payload["status"] == "setup_required"
     assert payload["missing"] == ["flex.dividend_query_ids"]
-    assert payload["guide"] == "flex-query-setup.md"
+    assert payload["guide"] == GUIDE
     assert payload["message"] == "Flex configuration is invalid"
     assert re.fullmatch(r"[0-9a-f]{32}", payload["run_id"])
     assert f"run_id={payload['run_id']}" in completed.stderr

@@ -31,7 +31,7 @@ from ib_common.flex import parse_iso_date, select_flex_window  # noqa: E402
 from ib_common.redaction import redact_account_identifiers  # noqa: E402
 
 LOGGER = logging.getLogger("ib_dividend_income")
-GUIDE = "flex-query-setup.md"
+GUIDE = "references/ib-dividend-income-flex-query-setup.md"
 
 
 def _state(

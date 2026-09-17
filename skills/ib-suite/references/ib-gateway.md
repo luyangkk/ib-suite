@@ -1,20 +1,3 @@
----
-name: ib-gateway
-description: Read-only pull of Interactive Brokers account, position, execution, bar and dividend data from IB Gateway or Flex into a local snapshot + Parquet lake.
-metadata:
-  openclaw:
-    requires:
-      bins: [python3]
-      config: [config.yaml]
-    os: [darwin, linux]
-    envVars:
-      - name: FLEX_TOKEN
-        required: false
-        description: Flex Web Service token; only needed for the optional Flex history/dividends pull.
-      - name: FLEX_QUERY_ID
-        required: false
-        description: Flex query ID that selects the saved report to fetch.
----
 
 # ib-gateway
 
@@ -32,7 +15,7 @@ access, and tick **Read-Only API** in Gateway settings as an extra guard.
 ### /ib-sync — snapshot current account + positions
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/scripts/ib_sync.py --config .ib-suite/config.yaml
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-gateway/scripts/ib_sync.py --config $WORKSPACE_ROOT/.ib-suite/config.yaml
 ```
 
 Writes `data/snapshots/<account>/<ts>.json` (instantaneous state) and appends
@@ -41,7 +24,7 @@ Writes `data/snapshots/<account>/<ts>.json` (instantaneous state) and appends
 ### Flex history (dividends, trades > 7 days old)
 
 ```bash
-{baseDir}/../.venv/bin/python -c "import sys; sys.path.insert(0,'{baseDir}/scripts'); \
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python -c "import sys; sys.path.insert(0,'$SKILL_ROOT/ib-gateway/scripts'); \
 import flex_fetch; print(flex_fetch.fetch_flex_report('$FLEX_TOKEN','$FLEX_QUERY_ID'))"
 ```
 

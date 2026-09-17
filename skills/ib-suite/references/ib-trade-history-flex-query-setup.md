@@ -5,7 +5,7 @@ This standalone guide configures the saved Activity Flex Queries used by
 reporting path: do not start IB Gateway, do not request market data, do not
 place, modify, or cancel orders, and do not persist trade data to the lake. The
 only local write is the Flex token and Query ID window map in the ignored
-`.ib-suite/config.yaml`; never paste either value into logs, reports, source
+`$WORKSPACE_ROOT/.ib-suite/config.yaml`; never paste either value into logs, reports, source
 files, or version control.
 
 Official IBKR references: [create an Activity Flex Query](https://www.ibkrguides.com/clientportal/performanceandstatements/activityflex.htm),
@@ -150,7 +150,7 @@ shell history, logs, or source control.
 ## 5. Register credentials conversationally
 
 First ensure the ib-suite onboarding flow has created
-`.ib-suite/config.yaml`. In a conversation, collect one item at a time: desired
+`$WORKSPACE_ROOT/.ib-suite/config.yaml`. In a conversation, collect one item at a time: desired
 window, matching Query ID, then the token only if it is absent. Do not ask the
 user to repeat a token that is already configured.
 
@@ -162,8 +162,8 @@ carrying the six dividend sections belongs under the dividend target instead.
 For the first token and window, run the configurator with `--token-stdin`:
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \
-  --config .ib-suite/config.yaml \
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-trade-history/scripts/configure_flex.py \
+  --config $WORKSPACE_ROOT/.ib-suite/config.yaml \
   --token-stdin \
   --target trade_history \
   --window '7=<query-id>'
@@ -175,8 +175,8 @@ already stored, add new windows without reading or rewriting that token; repeat
 `--window` to register several keys in one confirmed operation:
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \
-  --config .ib-suite/config.yaml \
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-trade-history/scripts/configure_flex.py \
+  --config $WORKSPACE_ROOT/.ib-suite/config.yaml \
   --target trade_history \
   --window '30=<query-id>' --window '90=<query-id>' \
   --window 'mtd=<query-id>' --window 'ytd=<query-id>'
@@ -194,8 +194,8 @@ restriction, then—with explicit confirmation to replace the local token—run
 (token-only, so no `--target` is needed):
 
 ```bash
-{baseDir}/../.venv/bin/python {baseDir}/scripts/configure_flex.py \
-  --config .ib-suite/config.yaml \
+$WORKSPACE_ROOT/.ib-suite/venv/bin/python $SKILL_ROOT/ib-trade-history/scripts/configure_flex.py \
+  --config $WORKSPACE_ROOT/.ib-suite/config.yaml \
   --token-stdin \
   --force
 ```
@@ -203,7 +203,7 @@ restriction, then—with explicit confirmation to replace the local token—run
 ## 6. Validate and troubleshoot
 
 A successful configurator response such as
-`{"config":".ib-suite/config.yaml","ready":true}` proves only that the ignored
+`{"config":"$WORKSPACE_ROOT/.ib-suite/config.yaml","ready":true}` proves only that the ignored
 local file was written atomically and reloads under the local schema. Saving
 local credentials does not prove the remote query is correct. Validate remotely
 by rerunning `/ib-trade-history` for an explicit date range or `--period`; a
@@ -215,7 +215,7 @@ successful report is the end-to-end check.
   enable (for example `orderType` or `fxRateToBase`). Edit the saved query, add
   that field from §2, save, and rerun. Saving a local Query ID cannot repair its
   remote template.
-- Base currency unresolved: set `data.base_currency` in `.ib-suite/config.yaml`;
+- Base currency unresolved: set `data.base_currency` in `$WORKSPACE_ROOT/.ib-suite/config.yaml`;
   it is required to convert foreign-currency fills and commissions.
 - Third-currency commission rejected: a fill whose commission currency differs
   from both the asset currency and the base currency has no independent Flex rate

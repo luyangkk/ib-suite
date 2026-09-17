@@ -57,4 +57,4 @@ Explain the *why*, not just the *what*. Prefer new commits over amending.
 - See [SECURITY.md](SECURITY.md) for reporting vulnerabilities and
   [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations.
 
-For the full architecture and conventions, read [CLAUDE.md](CLAUDE.md).
+For the package overview and usage conventions, read the [README](README.md).
