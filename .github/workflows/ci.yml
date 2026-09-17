@@ -34,9 +34,9 @@ jobs:
 
       - name: Verify dependency locks
         run: |
-          uv pip compile --universal --generate-hashes skills/ib-suite/ib-common/pyproject.toml skills/ib-suite/requirements-runtime.in --output-file skills/ib-suite/requirements-runtime.lock
-          uv pip compile --universal --generate-hashes skills/ib-suite/requirements-build.in --output-file skills/ib-suite/requirements-build.lock
-          uv pip compile --universal --generate-hashes skills/ib-suite/ib-common/pyproject.toml skills/ib-suite/requirements-runtime.in skills/ib-suite/requirements-test.in --output-file skills/ib-suite/requirements-test.lock
+          uv pip compile --python-version 3.11 --universal --generate-hashes skills/ib-suite/ib-common/pyproject.toml skills/ib-suite/requirements-runtime.in --output-file skills/ib-suite/requirements-runtime.lock
+          uv pip compile --python-version 3.11 --universal --generate-hashes skills/ib-suite/requirements-build.in --output-file skills/ib-suite/requirements-build.lock
+          uv pip compile --python-version 3.11 --universal --generate-hashes skills/ib-suite/ib-common/pyproject.toml skills/ib-suite/requirements-runtime.in skills/ib-suite/requirements-test.in --output-file skills/ib-suite/requirements-test.lock
           git diff --exit-code -- skills/ib-suite/requirements-runtime.lock skills/ib-suite/requirements-build.lock skills/ib-suite/requirements-test.lock
 
       - name: Install test and reference-validator dependencies
